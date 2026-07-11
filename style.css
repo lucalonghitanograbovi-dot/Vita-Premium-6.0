@@ -25,16 +25,44 @@ body {
   overflow-y: auto;
 }
 
+.add-effect-box {
+  background: #282828;
+  padding: 10px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+select {
+  background: #121212;
+  color: white;
+  border: 1px solid #444;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
 .controls {
-  margin-top: 15px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.controls label {
-  font-size: 0.9em;
+.effect-control {
+  background: #252525;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid #007acc;
+}
+
+.effect-control label {
+  font-size: 0.85em;
   color: #ccc;
+  display: block;
+  margin-bottom: 4px;
 }
 
 .preview {
