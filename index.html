@@ -2,100 +2,155 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Vita Premium 6.0 - Video & Audio Editor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vegas Pro Web Edition</title>
   <link rel="stylesheet" href="style.css">
+  <!-- Íconos de FontAwesome para estilo profesional -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
-  <div class="editor-container">
-    <!-- Panel de Efectos Organizado -->
-    <div class="panel sidebar">
-      <h2>Efectos (Vegas Pro FX)</h2>
-      <input type="file" id="videoInput" accept="video/*">
-      
-      <div class="controls" id="controlsContainer">
+  <!-- 1. BARRA DE MENÚ SUPERIOR -->
+  <header class="menu-bar">
+    <div class="menu-item">Archivo</div>
+    <div class="menu-item">Edición</div>
+    <div class="menu-item">Ver</div>
+    <div class="menu-item">Insertar</div>
+    <div class="menu-item">Opciones</div>
+    <div class="menu-item">Ayuda</div>
+  </header>
 
-        <div class="effect-control">
-          <label>Gradient Map (Degradado):</label>
-          <input type="range" id="gradientSlider" min="0" max="100" value="0">
-        </div>
-
-        <div class="effect-control">
-          <label>Wave (Ondulación / Deformación):</label>
-          <input type="range" id="waveSlider" min="0" max="50" value="0">
-        </div>
-
-        <div class="effect-control">
-          <label>Saturación:</label>
-          <input type="range" id="satSlider" min="0" max="500" value="100">
-        </div>
-
-        <div class="effect-control">
-          <label>Hue (Color / Tono):</label>
-          <input type="range" id="hueSlider" min="0" max="360" value="0">
-        </div>
-
-        <div class="effect-control">
-          <label>Ojo de Pez (Zoom Curvo):</label>
-          <input type="range" id="fisheyeSlider" min="100" max="200" value="100">
-        </div>
-
-        <div class="effect-control">
-          <label>Remolino (Rotación):</label>
-          <input type="range" id="swirlSlider" min="-180" max="180" value="0">
-        </div>
-
-        <div class="effect-control">
-          <label>Sepia:</label>
-          <input type="range" id="sepiaSlider" min="0" max="100" value="0">
-        </div>
-
-        <div class="effect-control">
-          <label>Desenfoque (Blur):</label>
-          <input type="range" id="blurSlider" min="0" max="10" value="0">
-        </div>
-
-      </div>
-    </div>
-
-    <!-- Panel de Previsualización -->
-    <div class="panel preview">
-      <h2>Previsualización</h2>
-      <div class="video-wrapper" id="videoWrapper">
-        <video id="videoPreview" controls crossOrigin="anonymous"></video>
-      </div>
-    </div>
+  <!-- BARRA DE HERRAMIENTAS -->
+  <div class="toolbar">
+    <button class="tool-btn" title="Nuevo Proyecto"><i class="fa-solid fa-file"></i></button>
+    <button class="tool-btn" title="Abrir Media"><i class="fa-solid fa-folder-open"></i></button>
+    <button class="tool-btn" title="Guardar"><i class="fa-solid fa-floppy-disk"></i></button>
+    <div class="separator"></div>
+    <button class="tool-btn" title="Cortar Clip"><i class="fa-solid fa-scissors"></i></button>
+    <button class="tool-btn" title="Copiar"><i class="fa-solid fa-copy"></i></button>
+    <button class="tool-btn" title="Pegar"><i class="fa-solid fa-paste"></i></button>
   </div>
 
-  <!-- Panel de Timeline y Semitonos -->
-  <div class="timeline">
-    <h3>Línea de Tiempo y Tono de Audio (Semitones en Velocidad 1x)</h3>
+  <!-- 2. ÁREA CENTRAL (SPLIT PANEL) -->
+  <main class="workspace">
     
-    <div class="track">
-      <span>Track 1 Audio (Semitonos: <b id="val1">0</b>)</span>
-      <input type="range" class="pitch-slider" id="pitch1" min="-12" max="12" value="0">
+    <!-- PANEL IZQUIERDO: MEDIOS / EFECTOS -->
+    <section class="panel media-panel">
+      <div class="tab-header">
+        <button class="tab-btn active" onclick="switchTab('explorer')">Media Explorer</button>
+        <button class="tab-btn" onclick="switchTab('effects')">Efectos de Video</button>
+        <button class="tab-btn" onclick="switchTab('transitions')">Transiciones</button>
+      </div>
+
+      <div class="tab-content active" id="tab-explorer">
+        <div class="media-dropzone">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+          <p>Arrastra archivos o haz clic para importar media</p>
+          <input type="file" id="mediaInput" accept="video/*,audio/*" hidden>
+          <button class="btn-import" onclick="document.getElementById('mediaInput').click()">Importar Archivos</button>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-effects">
+        <ul class="fx-list">
+          <li><i class="fa-solid fa-wand-magic-sparkles"></i> Vegas Blur / Desenfoque</li>
+          <li><i class="fa-solid fa-palette"></i> Color Corrector (3-Way)</li>
+          <li><i class="fa-solid fa-sun"></i> Brightness & Contrast</li>
+          <li><i class="fa-solid fa-circle-half-stroke"></i> Sepia / Blanco y Negro</li>
+          <li><i class="fa-solid fa-eye"></i> Ojo de Pez / Distortion</li>
+        </ul>
+      </div>
+
+      <div class="tab-content" id="tab-transitions">
+        <ul class="fx-list">
+          <li><i class="fa-solid fa-arrows-split-up-and-left"></i> Crossfade Clásico</li>
+          <li><i class="fa-solid fa-rug"></i> Cross Zoom</li>
+          <li><i class="fa-solid fa-turn-down"></i> Slide In</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- PANEL DERECHO: PREVISUALIZACIÓN DE VIDEO -->
+    <section class="panel preview-panel">
+      <div class="preview-header">
+        <span>Previsualización del Proyecto (720p 29.97fps)</span>
+      </div>
+      <div class="preview-screen" id="previewScreen">
+        <video id="mainVideo" src="" crossorigin="anonymous"></video>
+        <div class="placeholder-text" id="placeholderText">Sin Medios en Pista</div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 3. ÁREA INFERIOR: TIMELINE (LÍNEA DE TIEMPO) -->
+  <footer class="timeline-container">
+    
+    <!-- CONTROLES Y TIMECODE -->
+    <div class="timeline-controls">
+      <div class="timecode-display" id="timecode">00:00:00:00</div>
+      <div class="playback-buttons">
+        <button class="control-btn" id="btnPrev" title="Ir al inicio"><i class="fa-solid fa-backward-step"></i></button>
+        <button class="control-btn" id="btnPlay" title="Reproducir/Pausa"><i class="fa-solid fa-play"></i></button>
+        <button class="control-btn" id="btnStop" title="Detener"><i class="fa-solid fa-stop"></i></button>
+        <button class="control-btn" id="btnLoop" title="Repetir (Bucle)"><i class="fa-solid fa-repeat"></i></button>
+      </div>
     </div>
 
-    <div class="track">
-      <span>Track 2 Audio (Semitonos: <b id="val2">0</b>)</span>
-      <input type="range" class="pitch-slider" id="pitch2" min="-12" max="12" value="0">
-    </div>
+    <!-- PISTAS Y REGLA DE TIEMPO -->
+    <div class="timeline-editor">
+      
+      <!-- ENCABEZADOS DE PISTAS (IZQUIERDA) -->
+      <div class="track-headers">
+        <div class="ruler-corner"></div>
+        
+        <div class="track-header video-header">
+          <div class="track-info">
+            <span class="track-num">1</span>
+            <span class="track-name"><i class="fa-solid fa-video"></i> Pista de Video</span>
+          </div>
+          <div class="track-controls">
+            <button class="mini-btn">M</button>
+            <button class="mini-btn">S</button>
+          </div>
+        </div>
 
-    <div class="track">
-      <span>Track 3 Audio (Semitonos: <b id="val3">0</b>)</span>
-      <input type="range" class="pitch-slider" id="pitch3" min="-12" max="12" value="0">
-    </div>
-  </div>
+        <div class="track-header audio-header">
+          <div class="track-info">
+            <span class="track-num">2</span>
+            <span class="track-name"><i class="fa-solid fa-music"></i> Pista de Audio</span>
+          </div>
+          <div class="track-controls">
+            <button class="mini-btn">M</button>
+            <button class="mini-btn">S</button>
+          </div>
+        </div>
+      </div>
 
-  <!-- Filtro SVG para efecto Wave de Vegas Pro -->
-  <svg style="display: none;">
-    <defs>
-      <filter id="waveFilter">
-        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.05" numOctaves="2" result="noise" id="feTurbulence"/>
-        <feDisplacementMap in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="G" id="feDisplacement"/>
-      </filter>
-    </defs>
-  </svg>
+      <!-- ÁREA DE REGLA Y CLIPS (DERECHA) -->
+      <div class="track-area" id="trackArea">
+        <!-- REGLA DE TIEMPO -->
+        <div class="time-ruler" id="timeRuler">
+          <span>00:00</span><span>00:05</span><span>00:10</span><span>00:15</span>
+          <span>00:20</span><span>00:25</span><span>00:30</span><span>00:35</span>
+        </div>
+
+        <!-- PLAYHEAD / CURSOR -->
+        <div class="playhead" id="playhead"></div>
+
+        <!-- CONTENIDO DE PISTAS -->
+        <div class="tracks-content">
+          <div class="track-lane video-lane">
+            <div class="clip video-clip" id="videoClip">Clip_Video_01.mp4</div>
+          </div>
+          <div class="track-lane audio-lane">
+            <div class="clip audio-clip" id="audioClip">Audio_Track_01.wav</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </footer>
 
   <script src="script.js"></script>
 </body>

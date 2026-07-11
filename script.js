@@ -1,107 +1,116 @@
-const videoInput = document.getElementById('videoInput');
-const videoPreview = document.getElementById('videoPreview');
-const videoWrapper = document.getElementById('videoWrapper');
+// VARIABLES GLOBAL DEL EDITOR
+let isPlaying = false;
+let currentFrame = 0;
+let playheadPosition = 0; // en pixeles
+let animationFrameId = null;
 
-// Elemento SVG para efecto Wave
-const feDisplacement = document.getElementById('feDisplacement');
+// ELEMENTOS DOM
+const playhead = document.getElementById('playhead');
+const timecode = document.getElementById('timecode');
+const btnPlay = document.getElementById('btnPlay');
+const btnStop = document.getElementById('btnStop');
+const btnPrev = document.getElementById('btnPrev');
+const trackArea = document.getElementById('trackArea');
+const mainVideo = document.getElementById('mainVideo');
+const placeholderText = document.getElementById('placeholderText');
+const mediaInput = document.getElementById('mediaInput');
 
-// Controles de Efectos Visuales
-const gradientSlider = document.getElementById('gradientSlider');
-const waveSlider = document.getElementById('waveSlider');
-const satSlider = document.getElementById('satSlider');
-const hueSlider = document.getElementById('hueSlider');
-const fisheyeSlider = document.getElementById('fisheyeSlider');
-const swirlSlider = document.getElementById('swirlSlider');
-const sepiaSlider = document.getElementById('sepiaSlider');
-const blurSlider = document.getElementById('blurSlider');
+// 1. CAMBIO DE PESTAÑAS
+function switchTab(tabName) {
+  const tabs = document.querySelectorAll('.tab-btn');
+  const contents = document.querySelectorAll('.tab-content');
 
-// Controles de Semitonos
-const pitch1 = document.getElementById('pitch1');
-const pitch2 = document.getElementById('pitch2');
-const pitch3 = document.getElementById('pitch3');
+  tabs.forEach(tab => tab.classList.remove('active'));
+  contents.forEach(content => content.classList.remove('active'));
 
-// Variables para Web Audio API (Pitch sin alterar velocidad)
-let audioCtx;
-let sourceNode;
+  event.currentTarget.classList.add('active');
+  document.getElementById(`tab-${tabName}`).classList.add('active');
+}
 
-// Cargar Video
-videoInput.addEventListener('change', function(e) {
+// 2. IMPORTACIÓN DE MEDIOS SIMULADA/REAL
+mediaInput.addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (file) {
-    videoPreview.src = URL.createObjectURL(file);
-    videoPreview.playbackRate = 1.0; // Mantiene velocidad constante siempre
+    const fileURL = URL.createObjectURL(file);
+    mainVideo.src = fileURL;
+    placeholderText.style.display = 'none';
+    document.getElementById('videoClip').innerText = file.name;
   }
 });
 
-// Aplicar Efectos Visuales estilo Vegas Pro
-function actualizarEfectosVisuales() {
-  const grad = gradientSlider.value;
-  const wave = waveSlider.value;
-  const sat = satSlider.value;
-  const hue = hueSlider.value;
-  const fisheye = fisheyeSlider.value;
-  const swirl = swirlSlider.value;
-  const sepia = sepiaSlider.value;
-  const blur = blurSlider.value;
+// 3. REPRODUCCIÓN Y CONTROL DE PLAYHEAD
+btnPlay.addEventListener('click', togglePlay);
+btnStop.addEventListener('click', stopPlayback);
+btnPrev.addEventListener('click', resetPlayhead);
 
-  // Actualizar el valor de la deformación Wave (SVG)
-  feDisplacement.setAttribute('scale', wave);
+function togglePlay() {
+  isPlaying = !isPlaying;
 
-  // Lista de filtros CSS
-  let filters = `saturate(${sat}%) hue-rotate(${hue}deg) sepia(${sepia}%) blur(${blur}px)`;
-
-  // Efecto Gradient Map aproximado en CSS
-  if (grad > 0) {
-    filters += ` contrast(${100 + parseInt(grad)}%) invert(${grad / 2}%)`;
-  }
-
-  // Activar filtro de Wave SVG si está en uso
-  if (wave > 0) {
-    filters += ` url(#waveFilter)`;
-  }
-
-  videoPreview.style.filter = filters;
-
-  // Deformación (Ojo de Pez y Remolino)
-  videoWrapper.style.transform = `scale(${fisheye / 100}) rotate(${swirl}deg)`;
-  if (fisheye > 100) {
-    videoPreview.style.borderRadius = "50%";
+  if (isPlaying) {
+    btnPlay.innerHTML = '<i class="fa-solid fa-pause"></i>';
+    if (mainVideo.src) mainVideo.play();
+    animate();
   } else {
-    videoPreview.style.borderRadius = "4px";
+    btnPlay.innerHTML = '<i class="fa-solid fa-play"></i>';
+    if (mainVideo.src) mainVideo.pause();
+    cancelAnimationFrame(animationFrameId);
   }
 }
 
-[gradientSlider, waveSlider, satSlider, hueSlider, fisheyeSlider, swirlSlider, sepiaSlider, blurSlider].forEach(slider => {
-  slider.addEventListener('input', actualizarEfectosVisuales);
-});
+function stopPlayback() {
+  isPlaying = false;
+  btnPlay.innerHTML = '<i class="fa-solid fa-play"></i>';
+  if (mainVideo.src) {
+    mainVideo.pause();
+    mainVideo.currentTime = 0;
+  }
+  cancelAnimationFrame(animationFrameId);
+  resetPlayhead();
+}
 
-// Configurar Pitch Shifting en Velocidad 1.0x usando la API de Preservación de Tono
-function aplicarSemitonos(semitones, valEl) {
-  valEl.innerText = semitones > 0 ? `+${semitones}` : semitones;
+function resetPlayhead() {
+  playheadPosition = 0;
+  currentFrame = 0;
+  updatePlayheadUI();
+}
 
-  // Garantizamos que la velocidad se mantenga en 1x (Normal)
-  videoPreview.playbackRate = 1.0;
+function animate() {
+  if (!isPlaying) return;
 
-  // Activamos el algoritmo interno de preservación de tiempo/pitch
-  if ('preservesPitch' in videoPreview) {
-    videoPreview.preservesPitch = true;
-  } else if ('webkitPreservesPitch' in videoPreview) {
-    videoPreview.webkitPreservesPitch = true;
-  } else if ('mozPreservesPitch' in videoPreview) {
-    videoPreview.mozPreservesPitch = true;
+  playheadPosition += 1.5; // Velocidad del cursor
+  currentFrame++;
+
+  if (playheadPosition > trackArea.offsetWidth) {
+    stopPlayback();
+    return;
   }
 
-  // Si querés que el tono suba/baje manteniendo el tempo, ajustamos el factor del motor de audio
-  const factor = Math.pow(2, semitones / 12);
+  updatePlayheadUI();
+  animationFrameId = requestAnimationFrame(animate);
+}
+
+function updatePlayheadUI() {
+  playhead.style.left = `${playheadPosition}px`;
   
-  // Para escuchar el cambio de afinación sin acelerar el video:
-  if (videoPreview.preservesPitch !== undefined) {
-    // Si preserva tono activado, alteramos la frecuencia del búfer de audio
-    videoPreview.preservesPitch = false;
-    videoPreview.playbackRate = factor;
-  }
+  // Formatear Timecode (HH:MM:SS:FF)
+  const totalSeconds = Math.floor(playheadPosition / 20); // 20px = 1 segundo simulado
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  const frames = (currentFrame % 30).toString().padStart(2, '0');
+
+  timecode.innerText = `00:${minutes}:${seconds}:${frames}`;
 }
 
-pitch1.addEventListener('input', () => aplicarSemitonos(parseInt(pitch1.value), document.getElementById('val1')));
-pitch2.addEventListener('input', () => aplicarSemitonos(parseInt(pitch2.value), document.getElementById('val2')));
-pitch3.addEventListener('input', () => aplicarSemitonos(parseInt(pitch3.value), document.getElementById('val3')));
+// 4. HACER CLIC EN LA REGLA PARA MOVER EL CURSOR
+trackArea.addEventListener('click', function(e) {
+  const rect = trackArea.getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  
+  playheadPosition = clickX;
+  if (mainVideo.src && mainVideo.duration) {
+    const totalDurationSeconds = (clickX / 20);
+    mainVideo.currentTime = totalDurationSeconds;
+  }
+  
+  updatePlayheadUI();
+});
