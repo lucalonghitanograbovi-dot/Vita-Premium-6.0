@@ -5,12 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vegas Pro Web Edition</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Íconos de FontAwesome para estilo profesional -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
 
-  <!-- 1. BARRA DE MENÚ SUPERIOR -->
+  <!-- BARRA DE MENÚ SUPERIOR -->
   <header class="menu-bar">
     <div class="menu-item">Archivo</div>
     <div class="menu-item">Edición</div>
@@ -20,7 +19,7 @@
     <div class="menu-item">Ayuda</div>
   </header>
 
-  <!-- BARRA DE HERRAMIENTAS -->
+  <!-- BARRA DE HERRAMIENTAS CON BOTÓN DE EXPORTAR -->
   <div class="toolbar">
     <button class="tool-btn" title="Nuevo Proyecto"><i class="fa-solid fa-file"></i></button>
     <button class="tool-btn" title="Abrir Media"><i class="fa-solid fa-folder-open"></i></button>
@@ -29,17 +28,21 @@
     <button class="tool-btn" title="Cortar Clip"><i class="fa-solid fa-scissors"></i></button>
     <button class="tool-btn" title="Copiar"><i class="fa-solid fa-copy"></i></button>
     <button class="tool-btn" title="Pegar"><i class="fa-solid fa-paste"></i></button>
+    <div class="separator"></div>
+    <!-- BOTÓN EXPORTAR -->
+    <button class="tool-btn btn-export" id="btnExport" title="Renderizar / Exportar Video">
+      <i class="fa-solid fa-file-export"></i> Renderizar Como...
+    </button>
   </div>
 
-  <!-- 2. ÁREA CENTRAL (SPLIT PANEL) -->
+  <!-- ÁREA CENTRAL (SPLIT) -->
   <main class="workspace">
     
-    <!-- PANEL IZQUIERDO: MEDIOS / EFECTOS -->
+    <!-- PANEL IZQUIERDO -->
     <section class="panel media-panel">
       <div class="tab-header">
         <button class="tab-btn active" onclick="switchTab('explorer')">Media Explorer</button>
-        <button class="tab-btn" onclick="switchTab('effects')">Efectos de Video</button>
-        <button class="tab-btn" onclick="switchTab('transitions')">Transiciones</button>
+        <button class="tab-btn" onclick="switchTab('effects')">Efectos de Video (FX)</button>
       </div>
 
       <div class="tab-content active" id="tab-explorer">
@@ -53,92 +56,57 @@
 
       <div class="tab-content" id="tab-effects">
         <ul class="fx-list">
-          <li><i class="fa-solid fa-wand-magic-sparkles"></i> Vegas Blur / Desenfoque</li>
-          <li><i class="fa-solid fa-palette"></i> Color Corrector (3-Way)</li>
-          <li><i class="fa-solid fa-sun"></i> Brightness & Contrast</li>
-          <li><i class="fa-solid fa-circle-half-stroke"></i> Sepia / Blanco y Negro</li>
-          <li><i class="fa-solid fa-eye"></i> Ojo de Pez / Distortion</li>
-        </ul>
-      </div>
-
-      <div class="tab-content" id="tab-transitions">
-        <ul class="fx-list">
-          <li><i class="fa-solid fa-arrows-split-up-and-left"></i> Crossfade Clásico</li>
-          <li><i class="fa-solid fa-rug"></i> Cross Zoom</li>
-          <li><i class="fa-solid fa-turn-down"></i> Slide In</li>
+          <li onclick="openFXModal('mirror')"><i class="fa-solid fa-clone"></i> Vegas Mirror (Espejo)</li>
+          <li onclick="openFXModal('color')"><i class="fa-solid fa-palette"></i> Color Corrector / Hue</li>
+          <li onclick="openFXModal('blur')"><i class="fa-solid fa-wand-magic-sparkles"></i> Vegas Gaussian Blur</li>
+          <li onclick="openFXModal('distortion')"><i class="fa-solid fa-eye"></i> Ojo de Pez / Swirl</li>
         </ul>
       </div>
     </section>
 
-    <!-- PANEL DERECHO: PREVISUALIZACIÓN DE VIDEO -->
+    <!-- PANEL PREVISUALIZACIÓN -->
     <section class="panel preview-panel">
       <div class="preview-header">
-        <span>Previsualización del Proyecto (720p 29.97fps)</span>
+        <span>Previsualización del Proyecto</span>
+        <button class="fx-badge-btn" onclick="openFXModal('mirror')"><i class="fa-solid fa-fx"></i> Configurar FX Activos</button>
       </div>
       <div class="preview-screen" id="previewScreen">
-        <video id="mainVideo" src="" crossorigin="anonymous"></video>
+        <div class="video-container" id="videoContainer">
+          <video id="mainVideo" src="" crossorigin="anonymous"></video>
+        </div>
         <div class="placeholder-text" id="placeholderText">Sin Medios en Pista</div>
       </div>
     </section>
 
   </main>
 
-  <!-- 3. ÁREA INFERIOR: TIMELINE (LÍNEA DE TIEMPO) -->
+  <!-- LÍNEA DE TIEMPO -->
   <footer class="timeline-container">
-    
-    <!-- CONTROLES Y TIMECODE -->
     <div class="timeline-controls">
       <div class="timecode-display" id="timecode">00:00:00:00</div>
       <div class="playback-buttons">
-        <button class="control-btn" id="btnPrev" title="Ir al inicio"><i class="fa-solid fa-backward-step"></i></button>
-        <button class="control-btn" id="btnPlay" title="Reproducir/Pausa"><i class="fa-solid fa-play"></i></button>
-        <button class="control-btn" id="btnStop" title="Detener"><i class="fa-solid fa-stop"></i></button>
-        <button class="control-btn" id="btnLoop" title="Repetir (Bucle)"><i class="fa-solid fa-repeat"></i></button>
+        <button class="control-btn" id="btnPrev"><i class="fa-solid fa-backward-step"></i></button>
+        <button class="control-btn" id="btnPlay"><i class="fa-solid fa-play"></i></button>
+        <button class="control-btn" id="btnStop"><i class="fa-solid fa-stop"></i></button>
       </div>
     </div>
 
-    <!-- PISTAS Y REGLA DE TIEMPO -->
     <div class="timeline-editor">
-      
-      <!-- ENCABEZADOS DE PISTAS (IZQUIERDA) -->
       <div class="track-headers">
         <div class="ruler-corner"></div>
-        
         <div class="track-header video-header">
-          <div class="track-info">
-            <span class="track-num">1</span>
-            <span class="track-name"><i class="fa-solid fa-video"></i> Pista de Video</span>
-          </div>
-          <div class="track-controls">
-            <button class="mini-btn">M</button>
-            <button class="mini-btn">S</button>
-          </div>
+          <span class="track-name"><i class="fa-solid fa-video"></i> Video 1</span>
         </div>
-
         <div class="track-header audio-header">
-          <div class="track-info">
-            <span class="track-num">2</span>
-            <span class="track-name"><i class="fa-solid fa-music"></i> Pista de Audio</span>
-          </div>
-          <div class="track-controls">
-            <button class="mini-btn">M</button>
-            <button class="mini-btn">S</button>
-          </div>
+          <span class="track-name"><i class="fa-solid fa-music"></i> Audio 1</span>
         </div>
       </div>
 
-      <!-- ÁREA DE REGLA Y CLIPS (DERECHA) -->
       <div class="track-area" id="trackArea">
-        <!-- REGLA DE TIEMPO -->
         <div class="time-ruler" id="timeRuler">
-          <span>00:00</span><span>00:05</span><span>00:10</span><span>00:15</span>
-          <span>00:20</span><span>00:25</span><span>00:30</span><span>00:35</span>
+          <span>00:00</span><span>00:05</span><span>00:10</span><span>00:15</span><span>00:20</span>
         </div>
-
-        <!-- PLAYHEAD / CURSOR -->
         <div class="playhead" id="playhead"></div>
-
-        <!-- CONTENIDO DE PISTAS -->
         <div class="tracks-content">
           <div class="track-lane video-lane">
             <div class="clip video-clip" id="videoClip">Clip_Video_01.mp4</div>
@@ -148,9 +116,72 @@
           </div>
         </div>
       </div>
-
     </div>
   </footer>
+
+  <!-- VENTANA EMERGENTE (MODAL EVENT FX CONFIG) -->
+  <div class="modal-overlay" id="fxModal">
+    <div class="modal-window">
+      <div class="modal-header">
+        <span><i class="fa-solid fa-sliders"></i> Video Event FX: Propiedades</span>
+        <button class="close-btn" onclick="closeFXModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- PESTAÑAS DE FX DENTRO DEL DIÁLOGO -->
+        <div class="fx-dialog-tabs">
+          <button class="dialog-tab active" id="tab-btn-mirror" onclick="showFXConfig('mirror')">Mirror</button>
+          <button class="dialog-tab" id="tab-btn-color" onclick="showFXConfig('color')">Color / Hue</button>
+          <button class="dialog-tab" id="tab-btn-blur" onclick="showFXConfig('blur')">Blur / Sepia</button>
+        </div>
+
+        <!-- CONFIGURACIÓN MIRROR -->
+        <div class="fx-config-panel" id="config-mirror">
+          <div class="control-group">
+            <label>Modo de Reflejo (Reflect Direction):</label>
+            <select id="mirrorMode" onchange="applyFX()">
+              <option value="none">Ninguno (Desactivado)</option>
+              <option value="horizontal">Horizontal (Izquierda a Derecha)</option>
+              <option value="vertical">Vertical (Arriba a Abajo)</option>
+              <option value="quad">Cuádruple (4 Vías Espejo)</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label>Ángulo / Opacidad del Espejo:</label>
+            <input type="range" id="mirrorOpacity" min="10" max="100" value="100" oninput="applyFX()">
+          </div>
+        </div>
+
+        <!-- CONFIGURACIÓN COLOR -->
+        <div class="fx-config-panel" id="config-color" style="display: none;">
+          <div class="control-group">
+            <label>Saturación:</label>
+            <input type="range" id="satVal" min="0" max="400" value="100" oninput="applyFX()">
+          </div>
+          <div class="control-group">
+            <label>Hue (Rotación de Color):</label>
+            <input type="range" id="hueVal" min="0" max="360" value="0" oninput="applyFX()">
+          </div>
+        </div>
+
+        <!-- CONFIGURACIÓN BLUR -->
+        <div class="fx-config-panel" id="config-blur" style="display: none;">
+          <div class="control-group">
+            <label>Desenfoque (Blur px):</label>
+            <input type="range" id="blurVal" min="0" max="20" value="0" oninput="applyFX()">
+          </div>
+          <div class="control-group">
+            <label>Tono Sepia:</label>
+            <input type="range" id="sepiaVal" min="0" max="100" value="0" oninput="applyFX()">
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn-dialog" onclick="closeFXModal()">Aceptar</button>
+      </div>
+    </div>
+  </div>
 
   <script src="script.js"></script>
 </body>
