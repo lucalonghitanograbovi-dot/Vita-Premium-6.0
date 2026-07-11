@@ -1,7 +1,7 @@
 body {
-  background-color: #1e1e1e;
+  background-color: #121212;
   color: #ffffff;
-  font-family: Arial, sans-serif;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   margin: 0;
   display: flex;
   flex-direction: column;
@@ -11,23 +11,30 @@ body {
 .editor-container {
   display: flex;
   flex: 1;
+  overflow: hidden;
 }
 
 .panel {
   padding: 15px;
-  border: 1px solid #333;
+  border: 1px solid #2a2a2a;
 }
 
 .sidebar {
-  width: 300px;
-  background-color: #252526;
+  width: 320px;
+  background-color: #1e1e1e;
+  overflow-y: auto;
 }
 
 .controls {
   margin-top: 15px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+
+.controls label {
+  font-size: 0.9em;
+  color: #ccc;
 }
 
 .preview {
@@ -36,24 +43,50 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.video-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  max-width: 90%;
+  max-height: 60vh;
+  transition: transform 0.1s ease;
 }
 
 video {
-  max-width: 90%;
-  max-height: 60vh;
-  margin-top: 10px;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
 }
 
 .timeline {
-  height: 150px;
-  background-color: #2d2d2d;
-  border-top: 2px solid #444;
-  padding: 10px;
+  height: 220px;
+  background-color: #181818;
+  border-top: 2px solid #333;
+  padding: 15px;
+  box-sizing: border-box;
 }
 
 .track {
-  background-color: #3e3e42;
-  margin: 5px 0;
-  padding: 8px;
-  border-radius: 4px;
+  background-color: #282828;
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.track span {
+  width: 250px;
+  font-size: 0.9em;
+}
+
+.pitch-slider {
+  flex: 1;
+  margin-left: 15px;
 }
