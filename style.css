@@ -25,26 +25,6 @@ body {
   overflow-y: auto;
 }
 
-.add-effect-box {
-  background: #282828;
-  padding: 10px;
-  border-radius: 6px;
-  margin-bottom: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-select {
-  background: #121212;
-  color: white;
-  border: 1px solid #444;
-  padding: 8px;
-  border-radius: 4px;
-  font-size: 0.9em;
-  cursor: pointer;
-}
-
 .controls {
   display: flex;
   flex-direction: column;

@@ -10,53 +10,51 @@
   <div class="editor-container">
     <!-- Panel de Efectos Organizado -->
     <div class="panel sidebar">
-      <h2>Añadir Efecto</h2>
+      <h2>Efectos (Vegas Pro FX)</h2>
       <input type="file" id="videoInput" accept="video/*">
       
-      <div class="add-effect-box">
-        <label for="effectSelect">Seleccionar Efecto:</label>
-        <select id="effectSelect">
-          <option value="sepia">Sepia</option>
-          <option value="invert">Invertir Colores</option>
-          <option value="blur">Desenfoque (Blur)</option>
-          <option value="saturate">Saturación Extra</option>
-          <option value="hue">Hue (Rotación de Color)</option>
-          <option value="fisheye">Ojo de Pez</option>
-          <option value="swirl">Remolino</option>
-        </select>
-      </div>
-
-      <h2>Controles Activos</h2>
       <div class="controls" id="controlsContainer">
-        <!-- Acá se cargarán los sliders según el efecto seleccionado -->
+
         <div class="effect-control">
-          <label>Sepia:</label>
-          <input type="range" id="sepiaSlider" min="0" max="100" value="0">
+          <label>Gradient Map (Degradado):</label>
+          <input type="range" id="gradientSlider" min="0" max="100" value="0">
         </div>
+
         <div class="effect-control">
-          <label>Invertir Colores:</label>
-          <input type="range" id="invertSlider" min="0" max="100" value="0">
+          <label>Wave (Ondulación / Deformación):</label>
+          <input type="range" id="waveSlider" min="0" max="50" value="0">
         </div>
-        <div class="effect-control">
-          <label>Desenfoque (Blur):</label>
-          <input type="range" id="blurSlider" min="0" max="10" value="0">
-        </div>
+
         <div class="effect-control">
           <label>Saturación:</label>
           <input type="range" id="satSlider" min="0" max="500" value="100">
         </div>
+
         <div class="effect-control">
-          <label>Hue (Color):</label>
+          <label>Hue (Color / Tono):</label>
           <input type="range" id="hueSlider" min="0" max="360" value="0">
         </div>
+
         <div class="effect-control">
-          <label>Ojo de Pez:</label>
+          <label>Ojo de Pez (Zoom Curvo):</label>
           <input type="range" id="fisheyeSlider" min="100" max="200" value="100">
         </div>
+
         <div class="effect-control">
-          <label>Remolino:</label>
+          <label>Remolino (Rotación):</label>
           <input type="range" id="swirlSlider" min="-180" max="180" value="0">
         </div>
+
+        <div class="effect-control">
+          <label>Sepia:</label>
+          <input type="range" id="sepiaSlider" min="0" max="100" value="0">
+        </div>
+
+        <div class="effect-control">
+          <label>Desenfoque (Blur):</label>
+          <input type="range" id="blurSlider" min="0" max="10" value="0">
+        </div>
+
       </div>
     </div>
 
@@ -64,14 +62,14 @@
     <div class="panel preview">
       <h2>Previsualización</h2>
       <div class="video-wrapper" id="videoWrapper">
-        <video id="videoPreview" controls></video>
+        <video id="videoPreview" controls crossOrigin="anonymous"></video>
       </div>
     </div>
   </div>
 
   <!-- Panel de Timeline y Semitonos -->
   <div class="timeline">
-    <h3>Línea de Tiempo y Tono de Audio (Pitch Semitones)</h3>
+    <h3>Línea de Tiempo y Tono de Audio (Semitones en Velocidad 1x)</h3>
     
     <div class="track">
       <span>Track 1 Audio (Semitonos: <b id="val1">0</b>)</span>
@@ -88,6 +86,16 @@
       <input type="range" class="pitch-slider" id="pitch3" min="-12" max="12" value="0">
     </div>
   </div>
+
+  <!-- Filtro SVG para efecto Wave de Vegas Pro -->
+  <svg style="display: none;">
+    <defs>
+      <filter id="waveFilter">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.05" numOctaves="2" result="noise" id="feTurbulence"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="G" id="feDisplacement"/>
+      </filter>
+    </defs>
+  </svg>
 
   <script src="script.js"></script>
 </body>
