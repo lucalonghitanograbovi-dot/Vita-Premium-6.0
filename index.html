@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Mi Editor de Video Web</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="editor-container">
+    <!-- Panel Izquierdo: Galería y Controles -->
+    <div class="panel sidebar">
+      <h2>Efectos & Archivos</h2>
+      <input type="file" id="videoInput" accept="video/*">
+      <div class="controls">
+        <label>Saturación:</label>
+        <input type="range" id="satSlider" min="0" max="200" value="100">
+        
+        <label>Hue (Color):</label>
+        <input type="range" id="hueSlider" min="0" max="360" value="0">
+      </div>
+    </div>
+
+    <!-- Panel Derecho: Previsualización -->
+    <div class="panel preview">
+      <h2>Previsualización</h2>
+      <video id="videoPreview" controls></video>
+    </div>
+  </div>
+
+  <!-- Panel Inferior: Timeline -->
+  <div class="timeline">
+    <h3>Línea de Tiempo (Timeline)</h3>
+    <div class="track">Pista 1: Video</div>
+    <div class="track">Pista 2: Audio</div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
