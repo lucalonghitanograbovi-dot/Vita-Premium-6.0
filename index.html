@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Untitled * - Sony Vegas Pro 8.0 (Full Audio & Video FX Engine)</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <div class="title-bar-mock">
+        <span>Untitled * - Sony Vegas Pro 8.0 (Audio & Video FX Engine + ProType Titler)</span>
+        <span>🗕 🗖 ✖</span>
+    </div>
+
+    <div class="menu-bar">
+        <div class="menu-item">File</div>
+        <div class="menu-item">Edit</div>
+        <div class="menu-item">View</div>
+        <div class="menu-item">Insert</div>
+        <div class="menu-item">Tools</div>
+        <div class="menu-item">Options</div>
+        <div class="menu-item">Help</div>
+    </div>
+
+    <div class="toolbar">
+        <label class="btn-retro" title="Importar Archivo">
+            📂 Importar Media
+            <input type="file" id="file-input" accept="video/*,audio/*" style="display:none;">
+        </label>
+        <div class="separator"></div>
+        <button class="btn-retro" id="btn-play">▶ Play</button>
+        <button class="btn-retro" id="btn-pause">⏸ Pause</button>
+        <button class="btn-retro" id="btn-stop">⏹ Stop</button>
+        <button class="btn-retro" id="btn-rewind">⏮ Inicio</button>
+        <div class="separator"></div>
+        <button class="btn-retro btn-dup" id="btn-duplicate" title="Duplicar Audio Seleccionado (Ctrl+D)">📋 Duplicar Audio</button>
+        <div class="separator"></div>
+        <button class="btn-retro btn-render" id="btn-render">🎬 Render As...</button>
+        <div class="separator"></div>
+        <div style="background:#000; color:#00FF00; font-family:monospace; font-size:14px; padding:2px 6px;" id="timecode">
+            00:00:00:00
+        </div>
+    </div>
+
+    <div id="workspace">
+        <div id="top-split">
+            <div id="track-headers">
+                <div class="track-header">
+                    <div class="track-title"><span>1. Video Track</span></div>
+                    <div class="track-btn-group">
+                        <button class="btn-fx" onclick="openVideoFXModal()">FX Video...</button>
+                        <button class="btn-retro btn-mute" id="mute-v1">M</button>
+                        <button class="btn-retro btn-solo" id="solo-v1">S</button>
+                    </div>
+                    <div style="font-size:9px;">Opacidad Pista:</div>
+                    <input type="range" id="vol-v1" min="0" max="100" value="100" style="width:100%; height:10px;">
+                </div>
+
+                <!-- AUDIO TRACK 1 -->
+                <div class="track-header" id="audio-header-1">
+                    <div class="track-title" style="background:#1B542D;"><span id="title-audio-1">2. Audio Track 1</span></div>
+                    <div class="track-btn-group">
+                        <button class="btn-fx" onclick="openAudioFXModal(1)">FX Audio...</button>
+                        <button class="btn-retro btn-mute" id="mute-a1" onclick="toggleMute(1)">M</button>
+                        <button class="btn-retro btn-solo" id="solo-a1">S</button>
+                    </div>
+                    <div style="font-size:9px;">Volumen Pista:</div>
+                    <input type="range" id="vol-a1" min="0" max="100" value="80" style="width:100%; height:10px;" oninput="updateTrackVolume(1, this.value)">
+                </div>
+
+                <!-- AUDIO TRACK 2 -->
+                <div class="track-header" id="audio-header-2">
+                    <div class="track-title" style="background:#1B542D;"><span id="title-audio-2">3. Audio Track 2</span></div>
+                    <div class="track-btn-group">
+                        <button class="btn-fx" onclick="openAudioFXModal(2)">FX Audio...</button>
+                        <button class="btn-retro btn-mute" id="mute-a2" onclick="toggleMute(2)">M</button>
+                        <button class="btn-retro btn-solo" id="solo-a2">S</button>
+                    </div>
+                    <div style="font-size:9px;">Volumen Pista:</div>
+                    <input type="range" id="vol-a2" min="0" max="100" value="80" style="width:100%; height:10px;" oninput="updateTrackVolume(2, this.value)">
+                </div>
+            </div>
+
+            <div id="timeline">
+                <div id="ruler"></div>
+                <div id="playhead"><div id="playhead-head"></div></div>
+
+                <div class="track-lane" id="lane-video"></div>
+                <div class="track-lane" id="lane-audio-1"></div>
+                <div class="track-lane" id="lane-audio-2"></div>
+            </div>
+        </div>
+
+        <div id="bottom-dock">
+            <div class="dock-container">
+                <div class="dock-tab-content">
+                    <b>Project Media & Sony Vegas Pro 8.0 Engine</b>
+                    <p style="font-size:10px; color:#444;">ProType Titler, Sapphire Plugins & Independent Multi-Track FX System.</p>
+                    <div id="media-filename" style="font-weight:bold; color:#182B48;"></div>
+                </div>
+
+                <div class="master-meter-panel">
+                    <b>Master</b>
+                    <div class="meter-bars">
+                        <div class="meter-channel"><div class="meter-fill" id="meter-l"></div></div>
+                        <div class="meter-channel"><div class="meter-fill" id="meter-r"></div></div>
+                    </div>
+                    <span style="font-size:8px; margin-top:2px;">0.0 dB</span>
+                </div>
+
+                <div class="preview-panel">
+                    <div class="preview-screen-container">
+                        <canvas id="preview-canvas" width="320" height="180"></canvas>
+                    </div>
+                    <div class="preview-footer">
+                        <div>Project: 320x180 • 29.970 fps (16:9)</div>
+                        <div>Status: <span id="status-text" style="color:green;">Listo</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL VIDEO FX -->
+    <div class="modal-overlay" id="modal-vfx">
+        <div class="modal-window">
+            <div class="modal-title">
+                <span>Video Track FX - Vegas Pro 8.0</span>
+                <span style="cursor:pointer;" onclick="closeModal('modal-vfx')">✖</span>
+            </div>
+            <div class="modal-body">
+
+                <!-- SONY GLOW EFFECT -->
+                <div class="fx-row">
+                    <span>🌟 <b>Sony Glow (Resplandor)</b></span>
+                    <input type="range" id="fx-v-glow" min="0" max="30" value="0" style="width:110px;">
+                </div>
+
+                <!-- MAGMA / MAGMA PLUS -->
+                <div class="fx-row" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>🔥 <b>Magma Plus (Hot Heat Displacement)</b></span>
+                        <input type="checkbox" id="fx-v-magma-check">
+                    </div>
+                    <div class="fx-subgroup">
+                        <div class="fx-subrow">
+                            <span>Intensidad de Calor:</span>
+                            <input type="range" id="fx-v-magma-intensity" min="0" max="100" value="50" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Velocidad de Flujo:</span>
+                            <input type="range" id="fx-v-magma-speed" min="1" max="50" value="15" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Modo Térmico:</span>
+                            <select id="fx-v-magma-mode">
+                                <option value="lava">Lava / Magma Red</option>
+                                <option value="plasma">Plasma Blue</option>
+                                <option value="solar">Solar Flare</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SAPPHIRE S_CARTOON -->
+                <div class="fx-row" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>🎨 <b>Sapphire S_Cartoon</b></span>
+                        <input type="checkbox" id="fx-v-scartoon-check">
+                    </div>
+                    <div class="fx-subgroup">
+                        <div class="fx-subrow">
+                            <span>Modo Cartoon:</span>
+                            <select id="fx-v-scartoon-mode">
+                                <option value="color-edges">Color & Edges (S_Cartoon)</option>
+                                <option value="edges-only">Edges Only (S_CartoonWithEdges)</option>
+                            </select>
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Sensibilidad de Bordes:</span>
+                            <input type="range" id="fx-v-scartoon-thresh" min="1" max="100" value="25" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Grosor de Línea:</span>
+                            <input type="range" id="fx-v-scartoon-width" min="1" max="5" value="1" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Posterizar / Niveles Color:</span>
+                            <input type="range" id="fx-v-scartoon-levels" min="2" max="16" value="5" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Saturación de Color:</span>
+                            <input type="range" id="fx-v-scartoon-sat" min="0" max="200" value="120" style="width:110px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CHANNEL BLEND -->
+                <div class="fx-row" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>🎛️ <b>Channel Blend</b></span>
+                        <input type="checkbox" id="fx-v-chanblend-check">
+                    </div>
+                    <div class="fx-subgroup">
+                        <div class="fx-subrow">
+                            <span>Red Channel:</span>
+                            <div style="display:flex; gap:2px; font-size:8px;">
+                                R:<input type="range" id="fx-v-cb-rr" min="-200" max="200" value="100" style="width:30px;">
+                                G:<input type="range" id="fx-v-cb-rg" min="-200" max="200" value="0" style="width:30px;">
+                                B:<input type="range" id="fx-v-cb-rb" min="-200" max="200" value="0" style="width:30px;">
+                            </div>
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Green Channel:</span>
+                            <div style="display:flex; gap:2px; font-size:8px;">
+                                R:<input type="range" id="fx-v-cb-gr" min="-200" max="200" value="0" style="width:30px;">
+                                G:<input type="range" id="fx-v-cb-gg" min="-200" max="200" value="100" style="width:30px;">
+                                B:<input type="range" id="fx-v-cb-gb" min="-200" max="200" value="0" style="width:30px;">
+                            </div>
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Blue Channel:</span>
+                            <div style="display:flex; gap:2px; font-size:8px;">
+                                R:<input type="range" id="fx-v-cb-br" min="-200" max="200" value="0" style="width:30px;">
+                                G:<input type="range" id="fx-v-cb-bg" min="-200" max="200" value="0" style="width:30px;">
+                                B:<input type="range" id="fx-v-cb-bb" min="-200" max="200" value="100" style="width:30px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fx-row">
+                    <span>↕️↔️ <b>Flip (Inversión de Imagen)</b></span>
+                    <select id="fx-v-flip">
+                        <option value="none">Ninguno</option>
+                        <option value="horizontal">Horizontal (Voltear X)</option>
+                        <option value="vertical">Vertical (Voltear Y)</option>
+                        <option value="both">Ambos (Horizontal + Vertical)</option>
+                    </select>
+                </div>
+                <div class="fx-row">
+                    <span>🔄 <b>Rotate (Giro 0° ➔ 180°)</b></span>
+                    <input type="checkbox" id="fx-v-rotate">
+                </div>
+                <div class="fx-row">
+                    <span>🔴🔵 <b>RGB Shift</b></span>
+                    <input type="range" id="fx-v-rgbshift" min="0" max="20" value="0" style="width:110px;">
+                </div>
+                <div class="fx-row">
+                    <span>✏️ <b>Edge Detect</b></span>
+                    <input type="checkbox" id="fx-v-edgedetect">
+                </div>
+                <div class="fx-row">
+                    <span>🌀 <b>Twirl</b></span>
+                    <input type="range" id="fx-v-twirl" min="-360" max="360" value="0" style="width:110px;">
+                </div>
+                <div class="fx-row">
+                    <span>🌪️ <b>Swirl / Vortex</b></span>
+                    <input type="range" id="fx-v-swirl" min="-720" max="720" value="0" style="width:110px;">
+                </div>
+                <div class="fx-row">
+                    <span>🌊 <b>Wave / Ripple</b></span>
+                    <div style="display:flex; align-items:center; gap:3px;">
+                        <span>Amp:</span>
+                        <input type="range" id="fx-v-wave-amp" min="0" max="30" value="0" style="width:35px;">
+                        <span>Freq:</span>
+                        <input type="range" id="fx-v-wave-freq" min="1" max="10" value="2" style="width:35px;">
+                        <span>Vel:</span>
+                        <input type="range" id="fx-v-wave-speed" min="0" max="100" value="0" style="width:35px;">
+                        <span>Modo:</span>
+                        <select id="fx-v-wave-dir">
+                            <option value="horizontal">Horizontal</option>
+                            <option value="vertical">Vertical</option>
+                            <option value="both">Ambas</option>
+                            <option value="ripple">Ripple</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="fx-row">
+                    <span>🪞 <b>Mirror</b></span>
+                    <select id="fx-v-mirror-mode">
+                        <option value="none">Ninguno</option>
+                        <option value="left-to-right">Left to Right</option>
+                        <option value="right-to-left">Right to Left</option>
+                        <option value="top-to-bottom">Top to Bottom</option>
+                        <option value="bottom-to-top">Bottom to Top</option>
+                    </select>
+                </div>
+                <div class="fx-row">
+                    <span>🔮 <b>Spherize / Pinch</b></span>
+                    <input type="range" id="fx-v-spherize" min="0" max="100" value="0" style="width:110px;">
+                </div>
+                <div class="fx-row">
+                    <span>🧩 <b>Pixelate</b></span>
+                    <input type="range" id="fx-v-pixelate" min="1" max="25" value="1" style="width:110px;">
+                </div>
+
+                <!-- GRADIENT MAP -->
+                <div class="fx-row" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>🌈 <b>Gradient Map</b></span>
+                        <input type="checkbox" id="fx-v-gradmap-check">
+                    </div>
+                    <div class="fx-subgroup">
+                        <div class="fx-subrow">
+                            <span>Preset:</span>
+                            <select id="fx-v-gradmap-preset">
+                                <option value="blue-yellow">Azul ➔ Amarillo</option>
+                                <option value="black-white">Blanco y Negro</option>
+                                <option value="cyberpunk">Cyberpunk</option>
+                                <option value="heat">Mapa Térmico</option>
+                                <option value="duotone-red">Duotono Rojo</option>
+                                <option value="rainbow">Arcoíris (Logo Scan)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TV SIMULATOR -->
+                <div class="fx-row" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>📺 <b>TV Simulator</b></span>
+                        <input type="checkbox" id="fx-v-tvsim">
+                    </div>
+                    <div class="fx-subgroup">
+                        <div class="fx-subrow">
+                            <span>Preset:</span>
+                            <select id="fx-tv-preset" style="width:150px;">
+                                <option value="custom">Personalizado / Custom</option>
+                                <option value="reset">[Default] / Reset</option>
+                                <option value="50hz">50 Hz Interlaced</option>
+                                <option value="black-and-white">Black and White</option>
+                                <option value="border Sync">Border Sync Loss</option>
+                                <option value="cheap-tv">Cheap TV</option>
+                                <option value="line-sync-loss">Line Sync Loss</option>
+                                <option value="old-tv">Old TV</option>
+                                <option value="static-only">Static Noise Only</option>
+                                <option value="vertical-sync-loss">Vertical Sync Loss</option>
+                            </select>
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Detail zoom:</span>
+                            <input type="range" id="fx-tv-detailzoom" min="1.0000" max="4.0000" step="0.05" value="1.0000" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Aperture grill:</span>
+                            <input type="range" id="fx-tv-aperture" min="0.0000" max="1.0000" step="0.01" value="0.0000" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Interlacing:</span>
+                            <input type="range" id="fx-tv-interlacing" min="0.0000" max="1.0000" step="0.01" value="0.0000" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Line sync:</span>
+                            <input type="range" id="fx-tv-linesync" min="0.0000" max="1.0000" step="0.01" value="0.0000" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Vertical sync:</span>
+                            <input type="range" id="fx-tv-vertsync" min="0.0000" max="1.0000" step="0.01" value="0.0000" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Scan phasing:</span>
+                            <input type="range" id="fx-tv-scanphasing" min="0.0000" max="1.0000" step="0.01" value="0.0000" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Phosphorescence:</span>
+                            <input type="range" id="fx-tv-phosphorescence" min="0.0000" max="1.0000" step="0.01" value="0.0000" style="width:110px;">
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Static:</span>
+                            <input type="range" id="fx-tv-static" min="0.0000" max="1.0000" step="0.01" value="0.0000" style="width:110px;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fx-row">
+                    <span>☯️ <b>Invert</b></span>
+                    <input type="checkbox" id="fx-v-invert">
+                </div>
+                <div class="fx-row">
+                    <span>🎞️ <b>Black and White</b></span>
+                    <input type="checkbox" id="fx-v-gray">
+                </div>
+                <div class="fx-row">
+                    <span>📜 <b>Sepia</b></span>
+                    <input type="checkbox" id="fx-v-sepia">
+                </div>
+                <div class="fx-row">
+                    <span>🌫️ <b>Gaussian Blur</b></span>
+                    <input type="range" id="fx-v-blur" min="0" max="20" value="0" style="width:110px;">
+                </div>
+                <div class="fx-row">
+                    <span>🎨 <b>HSL Adjust (Hue)</b></span>
+                    <input type="range" id="fx-v-hue" min="0" max="360" value="0" style="width:110px;">
+                </div>
+                <div class="fx-row">
+                    <span>☀️ <b>Brightness & Contrast</b></span>
+                    <input type="range" id="fx-v-brightness" min="50" max="200" value="100" style="width:110px;">
+                </div>
+                <div class="fx-row">
+                    <span>🔲 <b>Threshold</b></span>
+                    <input type="checkbox" id="fx-v-threshold">
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn-retro" onclick="closeModal('modal-vfx')">OK</button></div>
+        </div>
+    </div>
+
+    <!-- MODAL AUDIO FX -->
+    <div class="modal-overlay" id="modal-afx">
+        <div class="modal-window">
+            <div class="modal-title">
+                <span id="audio-modal-title">Audio Track FX - Vegas Pro 8.0</span>
+                <span style="cursor:pointer;" onclick="closeModal('modal-afx')">✖</span>
+            </div>
+            <div class="modal-body">
+                <div class="fx-row">
+                    <span>🎵 <b>Pitch Shift (Pitch Solo / Lock)</b></span>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <input type="range" id="fx-a-pitch-val" min="-24" max="24" value="0" style="width:100px;">
+                        <span id="pitch-disp" style="width:50px; font-weight:bold;">0 st</span>
+                    </div>
+                </div>
+
+                <!-- 4ORMULATOR -->
+                <div class="fx-row" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>🎛️ <b>4ormulator Vocoder / Resonator</b></span>
+                        <input type="checkbox" id="fx-a-formulator-check">
+                    </div>
+                    <div class="fx-subgroup">
+                        <div class="fx-subrow">
+                            <span>Harmonics / Bands:</span>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <input type="range" id="fx-a-formulator-bands" min="4" max="32" value="12" style="width:80px;">
+                                <span id="formulator-bands-disp" style="width:40px; text-align:right;">12</span>
+                            </div>
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Resonance Peak:</span>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <input type="range" id="fx-a-formulator-res" min="1" max="20" value="8" style="width:80px;">
+                                <span id="formulator-res-disp" style="width:40px; text-align:right;">8</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VOCODER -->
+                <div class="fx-row" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>🤖 <b>Vocoder / Formant</b></span>
+                        <input type="checkbox" id="fx-a-vocoder-check">
+                    </div>
+                    <div class="fx-subgroup">
+                        <div class="fx-subrow">
+                            <span>Carrier Freq (Hz):</span>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <input type="range" id="fx-a-vocoder-freq" min="50" max="800" value="150" style="width:80px;">
+                                <span id="vocoder-freq-disp" style="width:40px; text-align:right;">150 Hz</span>
+                            </div>
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Carrier Waveform:</span>
+                            <select id="fx-a-vocoder-wave" style="width:85px;">
+                                <option value="sawtooth">Sawtooth</option>
+                                <option value="square">Square</option>
+                                <option value="sine">Sine</option>
+                                <option value="noise">Noise</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BITCRUSHER -->
+                <div class="fx-row" style="flex-direction:column; align-items:stretch;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span>👾 <b>Bitcrusher / Bitchuser</b></span>
+                        <input type="checkbox" id="fx-a-bitcrush-check">
+                    </div>
+                    <div class="fx-subgroup">
+                        <div class="fx-subrow">
+                            <span>Bits (1 - 16):</span>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <input type="range" id="fx-a-bitcrush-bits" min="1" max="16" value="8" style="width:80px;">
+                                <span id="bitcrush-bits-disp" style="width:30px; text-align:right;">8 bit</span>
+                            </div>
+                        </div>
+                        <div class="fx-subrow">
+                            <span>Norm. Frequency (0.01 - 1.0):</span>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <input type="range" id="fx-a-bitcrush-normfreq" min="0.01" max="1.0" step="0.01" value="1.0" style="width:80px;">
+                                <span id="bitcrush-freq-disp" style="width:30px; text-align:right;">1.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fx-row">
+                    <span>🌊 <b>Amplitude Modulation (Tremolo)</b></span>
+                    <input type="checkbox" id="fx-a-am-check">
+                </div>
+                <div class="fx-row">
+                    <span>🌀 <b>ExpressFX Flange / Chorus</b></span>
+                    <input type="checkbox" id="fx-a-chorus-check">
+                </div>
+                <div class="fx-row">
+                    <span>🔁 <b>ExpressFX Delay / Echo</b></span>
+                    <input type="checkbox" id="fx-a-delay-check">
+                </div>
+                <div class="fx-row">
+                    <span>🔥 <b>Distortion / Overdrive</b></span>
+                    <input type="checkbox" id="fx-a-dist-check">
+                </div>
+                <div class="fx-row">
+                    <span>✂️ <b>ExpressFX Stutter / Gapper</b></span>
+                    <input type="checkbox" id="fx-a-stutter-check">
+                </div>
+                <div class="fx-row">
+                    <span>🎚️ <b>Parametric EQ (Filters)</b></span>
+                    <select id="fx-a-eq-mode">
+                        <option value="none">Flat (Off)</option>
+                        <option value="lowpass">Lowpass Filter</option>
+                        <option value="highpass">Highpass Filter</option>
+                    </select>
+                </div>
+                <div class="fx-row">
+                    <span>🔄 <b>Reverse Audio Track</b></span>
+                    <input type="checkbox" id="fx-a-reverse-check">
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn-retro" onclick="closeModal('modal-afx')">OK</button></div>
+        </div>
+    </div>
+
+    <video id="hidden-video" style="display:none;" crossorigin="anonymous" playsinline></video>
+
+    <script src="script.js"></script>
+</body>
+</html>

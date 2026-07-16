@@ -1,0 +1,1424 @@
+let isPlaying = false;
+let isRendering = false;
+let playheadPos = 0;
+const pps = 40;
+let videoDuration = 0;
+let mediaFileName = "";
+
+let wavePhase = 0;
+
+let audioClips = [];
+let activeAudioTrackCount = 2;
+let activeEditingTrackId = 1;
+
+let trackEffects = {
+    1: {
+        pitch: 0, formulator: false, formulatorBands: 12, formulatorRes: 8,
+        vocoder: false, vocoderFreq: 150, vocoderWave: 'sawtooth',
+        bitcrush: false, bitcrushBits: 8, bitcrushNormFreq: 1.0,
+        am: false, chorus: false, delay: false, dist: false, stutter: false,
+        eq: 'none', reverse: false, volume: 0.8, muted: false
+    },
+    2: {
+        pitch: 0, formulator: false, formulatorBands: 12, formulatorRes: 8,
+        vocoder: false, vocoderFreq: 150, vocoderWave: 'sawtooth',
+        bitcrush: false, bitcrushBits: 8, bitcrushNormFreq: 1.0,
+        am: false, chorus: false, delay: false, dist: false, stutter: false,
+        eq: 'none', reverse: false, volume: 0.8, muted: false
+    }
+};
+
+const videoElem = document.getElementById('hidden-video');
+const canvas = document.getElementById('preview-canvas');
+const ctx = canvas.getContext('2d');
+const playhead = document.getElementById('playhead');
+const timecode = document.getElementById('timecode');
+const meterL = document.getElementById('meter-l');
+const meterR = document.getElementById('meter-r');
+const statusText = document.getElementById('status-text');
+
+const offCanvas = document.createElement('canvas');
+offCanvas.width = 320;
+offCanvas.height = 180;
+const offCtx = offCanvas.getContext('2d');
+
+// AUDIO ENGINE
+let audioCtx = null;
+let originalAudioBuffer = null;
+let reversedAudioBuffer = null;
+let activeBufferSources = [];
+let audioDestinationNode = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+
+function create4ormulatorNode(ctx) {
+    const bufferSize = 2048;
+    const node = ctx.createScriptProcessor(bufferSize, 2, 2);
+    let bands = 12;
+    let resPeak = 8;
+    let phase = 0;
+
+    node.setParams = function(b, r) {
+        bands = b;
+        resPeak = r;
+    };
+
+    node.onaudioprocess = function(e) {
+        const inL = e.inputBuffer.getChannelData(0);
+        const inR = e.inputBuffer.getChannelData(1);
+        const outL = e.outputBuffer.getChannelData(0);
+        const outR = e.outputBuffer.getChannelData(1);
+
+        for (let i = 0; i < inL.length; i++) {
+            phase += 0.05;
+            let mod = Math.sin(phase * (bands / 4)) * (resPeak / 10);
+            outL[i] = Math.tanh(inL[i] * (1 + mod));
+            outR[i] = Math.tanh(inR[i] * (1 + mod));
+        }
+    };
+    return node;
+}
+
+function createPitchShifterNode(ctx) {
+    const bufferSize = 4096;
+    const node = ctx.createScriptProcessor(bufferSize, 2, 2);
+    let semitones = 0;
+    let pitchRatio = 1.0;
+
+    const grainSize = 1024;
+    const ringLen = 16384;
+    const ringL = new Float32Array(ringLen);
+    const ringR = new Float32Array(ringLen);
+    let writeIdx = 0;
+
+    node.setSemitones = function(s) {
+        semitones = s;
+        pitchRatio = Math.pow(2, s / 12);
+    };
+
+    node.onaudioprocess = function(e) {
+        const inL = e.inputBuffer.getChannelData(0);
+        const inR = e.inputBuffer.getChannelData(1);
+        const outL = e.outputBuffer.getChannelData(0);
+        const outR = e.outputBuffer.getChannelData(1);
+
+        if (semitones === 0) {
+            outL.set(inL);
+            outR.set(inR);
+            return;
+        }
+
+        for (let i = 0; i < inL.length; i++) {
+            ringL[writeIdx] = inL[i];
+            ringR[writeIdx] = inR[i];
+
+            let phase = (writeIdx * (1 - pitchRatio)) % grainSize;
+            if (phase < 0) phase += grainSize;
+
+            let p1 = Math.floor((writeIdx - phase) % ringLen);
+            if (p1 < 0) p1 += ringLen;
+
+            let p2 = Math.floor((writeIdx - phase - grainSize) % ringLen);
+            if (p2 < 0) p2 += ringLen;
+
+            let alpha = phase / grainSize;
+            let w1 = 0.5 * (1 + Math.cos(Math.PI * alpha));
+            let w2 = 1.0 - w1;
+
+            outL[i] = ringL[p1] * w1 + ringL[p2] * w2;
+            outR[i] = ringR[p1] * w1 + ringR[p2] * w2;
+
+            writeIdx = (writeIdx + 1) % ringLen;
+        }
+    };
+    return node;
+}
+
+function createVocoderNode(ctx) {
+    const bufferSize = 2048;
+    const node = ctx.createScriptProcessor(bufferSize, 2, 2);
+    let carrierFreq = 150;
+    let waveType = 'sawtooth';
+    let phase = 0;
+
+    node.setParams = function(freq, wave) {
+        carrierFreq = freq;
+        waveType = wave;
+    };
+
+    node.onaudioprocess = function(e) {
+        const inL = e.inputBuffer.getChannelData(0);
+        const inR = e.inputBuffer.getChannelData(1);
+        const outL = e.outputBuffer.getChannelData(0);
+        const outR = e.outputBuffer.getChannelData(1);
+
+        const sampleRate = ctx.sampleRate;
+        const phaseInc = (2 * Math.PI * carrierFreq) / sampleRate;
+
+        for (let i = 0; i < inL.length; i++) {
+            let carrier = 0;
+            phase += phaseInc;
+            if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+
+            if (waveType === 'sawtooth') carrier = (phase / Math.PI) - 1.0;
+            else if (waveType === 'square') carrier = phase < Math.PI ? 1.0 : -1.0;
+            else if (waveType === 'sine') carrier = Math.sin(phase);
+            else if (waveType === 'noise') carrier = Math.random() * 2 - 1;
+
+            let modEnvL = Math.abs(inL[i]);
+            let modEnvR = Math.abs(inR[i]);
+
+            outL[i] = carrier * modEnvL * 1.5;
+            outR[i] = carrier * modEnvR * 1.5;
+        }
+    };
+    return node;
+}
+
+function createBitcrusherNode(ctx) {
+    const bufferSize = 4096;
+    const node = ctx.createScriptProcessor(bufferSize, 2, 2);
+    let bits = 8;
+    let normFreq = 1.0;
+    let phaser = 0;
+    let lastL = 0, lastR = 0;
+
+    node.setParams = function(b, nf) {
+        bits = b;
+        normFreq = Math.max(0.01, Math.min(1.0, nf));
+    };
+
+    node.onaudioprocess = function(e) {
+        const inL = e.inputBuffer.getChannelData(0);
+        const inR = e.inputBuffer.getChannelData(1);
+        const outL = e.outputBuffer.getChannelData(0);
+        const outR = e.outputBuffer.getChannelData(1);
+
+        const step = Math.pow(0.5, bits);
+
+        for (let i = 0; i < inL.length; i++) {
+            phaser += normFreq;
+            if (phaser >= 1.0) {
+                phaser -= 1.0;
+                lastL = step * Math.floor(inL[i] / step + 0.5);
+                lastR = step * Math.floor(inR[i] / step + 0.5);
+            }
+            outL[i] = lastL;
+            outR[i] = lastR;
+        }
+    };
+    return node;
+}
+
+function initAudioContext() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (!audioDestinationNode) audioDestinationNode = audioCtx.createMediaStreamDestination();
+}
+
+function makeDistortionCurve(amount) {
+    let k = amount, n_samples = 44100, curve = new Float32Array(n_samples), deg = Math.PI / 180;
+    for (let i = 0; i < n_samples; ++i) {
+        let x = i * 2 / n_samples - 1;
+        curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+}
+
+function stopAllAudioSources() {
+    activeBufferSources.forEach(src => {
+        try { src.stop(); src.disconnect(); } catch(e){}
+    });
+    activeBufferSources = [];
+}
+
+function playIndependentAudioTracks() {
+    stopAllAudioSources();
+    if (!originalAudioBuffer) return;
+
+    videoElem.muted = true;
+
+    for (let t = 1; t <= activeAudioTrackCount; t++) {
+        const fx = trackEffects[t];
+        if (!fx || fx.muted) continue;
+
+        const buf = fx.reverse ? reversedAudioBuffer : originalAudioBuffer;
+        if (!buf) continue;
+
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+
+        let current = src;
+
+        if (fx.pitch !== 0) {
+            const pitchNode = createPitchShifterNode(audioCtx);
+            pitchNode.setSemitones(fx.pitch);
+            current.connect(pitchNode);
+            current = pitchNode;
+        }
+
+        if (fx.formulator) {
+            const formNode = create4ormulatorNode(audioCtx);
+            formNode.setParams(fx.formulatorBands, fx.formulatorRes);
+            current.connect(formNode);
+            current = formNode;
+        }
+
+        if (fx.vocoder) {
+            const vocNode = createVocoderNode(audioCtx);
+            vocNode.setParams(fx.vocoderFreq, fx.vocoderWave);
+            current.connect(vocNode);
+            current = vocNode;
+        }
+
+        if (fx.bitcrush) {
+            const bcNode = createBitcrusherNode(audioCtx);
+            bcNode.setParams(fx.bitcrushBits, fx.bitcrushNormFreq);
+            current.connect(bcNode);
+            current = bcNode;
+        }
+
+        if (fx.eq !== 'none') {
+            const eqNode = audioCtx.createBiquadFilter();
+            eqNode.type = fx.eq;
+            eqNode.frequency.value = fx.eq === 'lowpass' ? 800 : 2000;
+            current.connect(eqNode);
+            current = eqNode;
+        }
+
+        if (fx.dist) {
+            const distNode = audioCtx.createWaveShaper();
+            distNode.curve = makeDistortionCurve(300);
+            current.connect(distNode);
+            current = distNode;
+        }
+
+        if (fx.chorus) {
+            const chorusDelay = audioCtx.createDelay();
+            chorusDelay.delayTime.value = 0.015;
+            const chorusLFO = audioCtx.createOscillator();
+            chorusLFO.frequency.value = 2.5;
+            const chorusGain = audioCtx.createGain();
+            chorusGain.gain.value = 0.005;
+            chorusLFO.connect(chorusGain);
+            chorusGain.connect(chorusDelay.delayTime);
+            chorusLFO.start();
+
+            current.connect(chorusDelay);
+            current = chorusDelay;
+        }
+
+        if (fx.delay) {
+            const delayNode = audioCtx.createDelay();
+            delayNode.delayTime.value = 0.25;
+            const delayFeedback = audioCtx.createGain();
+            delayFeedback.gain.value = 0.4;
+            delayNode.connect(delayFeedback);
+            delayFeedback.connect(delayNode);
+
+            current.connect(delayNode);
+            current = delayNode;
+        }
+
+        if (fx.am) {
+            const amGain = audioCtx.createGain();
+            const amLFO = audioCtx.createOscillator();
+            amLFO.frequency.value = 8.0;
+            const amLfoGain = audioCtx.createGain();
+            amLfoGain.gain.value = 0.5;
+            amLFO.connect(amLfoGain);
+            amLfoGain.connect(amGain.gain);
+            amLFO.start();
+
+            current.connect(amGain);
+            current = amGain;
+        }
+
+        if (fx.stutter) {
+            const stutterGain = audioCtx.createGain();
+            const stutterLFO = audioCtx.createOscillator();
+            stutterLFO.type = 'square';
+            stutterLFO.frequency.value = 12.0;
+            const stutterLfoGain = audioCtx.createGain();
+            stutterLfoGain.gain.value = 0.5;
+            stutterLFO.connect(stutterLfoGain);
+            stutterLfoGain.connect(stutterGain.gain);
+            stutterLFO.start();
+
+            current.connect(stutterGain);
+            current = stutterGain;
+        }
+
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = fx.volume;
+        current.connect(gainNode);
+
+        gainNode.connect(audioCtx.destination);
+        if (audioDestinationNode) gainNode.connect(audioDestinationNode);
+
+        const startTime = fx.reverse ? (videoDuration - videoElem.currentTime) : videoElem.currentTime;
+        src.start(0, Math.max(0, startTime));
+        activeBufferSources.push(src);
+    }
+}
+
+document.getElementById('file-input').addEventListener('change', async function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    mediaFileName = file.name;
+    const url = URL.createObjectURL(file);
+    videoElem.src = url;
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+        originalAudioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+        
+        reversedAudioBuffer = tempCtx.createBuffer(
+            originalAudioBuffer.numberOfChannels,
+            originalAudioBuffer.length,
+            originalAudioBuffer.sampleRate
+        );
+
+        for (let i = 0; i < originalAudioBuffer.numberOfChannels; i++) {
+            const origData = originalAudioBuffer.getChannelData(i);
+            const revData = reversedAudioBuffer.getChannelData(i);
+            for (let j = 0; j < origData.length; j++) {
+                revData[j] = origData[origData.length - 1 - j];
+            }
+        }
+    } catch(err) {
+        console.warn("Error decoding audio buffer:", err);
+    }
+
+    videoElem.onloadedmetadata = function() {
+        videoDuration = videoElem.duration;
+        document.getElementById('media-filename').innerText = `📄 ${file.name} (${videoDuration.toFixed(1)}s)`;
+        setupTimelineClips(file.name, videoDuration);
+        renderPreview();
+    };
+});
+
+function setupTimelineClips(name, duration) {
+    document.getElementById('lane-video').innerHTML = `<div class="media-clip" style="left:0px; width:${duration * pps}px;"><b>🎬 ${name}</b></div>`;
+    
+    audioClips = [
+        { id: 1, track: 1, name: name, duration: duration, startPos: 0, selected: true },
+        { id: 2, track: 2, name: `${name} (Copia)`, duration: duration, startPos: 0, selected: false }
+    ];
+    renderAudioClipsUI();
+}
+
+function renderAudioClipsUI() {
+    for (let t = 1; t <= activeAudioTrackCount; t++) {
+        const lane = document.getElementById(`lane-audio-${t}`);
+        if (lane) lane.innerHTML = '';
+    }
+
+    audioClips.forEach(clip => {
+        let lane = document.getElementById(`lane-audio-${clip.track}`);
+        if (!lane) lane = createNewAudioTrackUI(clip.track);
+
+        const width = clip.duration * pps;
+        const clipDiv = document.createElement('div');
+        clipDiv.className = `media-clip audio-clip ${clip.selected ? 'selected' : ''}`;
+        clipDiv.style.left = clip.startPos + 'px';
+        clipDiv.style.width = width + 'px';
+        clipDiv.innerHTML = `<b>🔊 ${clip.name}</b>`;
+
+        clipDiv.addEventListener('click', (e) => {
+            e.stopPropagation();
+            audioClips.forEach(c => c.selected = false);
+            clip.selected = true;
+            renderAudioClipsUI();
+        });
+
+        lane.appendChild(clipDiv);
+    });
+}
+
+function createNewAudioTrackUI(trackNum) {
+    activeAudioTrackCount = Math.max(activeAudioTrackCount, trackNum);
+    
+    if (!trackEffects[trackNum]) {
+        trackEffects[trackNum] = {
+            pitch: 0, formulator: false, formulatorBands: 12, formulatorRes: 8,
+            vocoder: false, vocoderFreq: 150, vocoderWave: 'sawtooth',
+            bitcrush: false, bitcrushBits: 8, bitcrushNormFreq: 1.0,
+            am: false, chorus: false, delay: false, dist: false, stutter: false,
+            eq: 'none', reverse: false, volume: 0.8, muted: false
+        };
+    }
+
+    const trackHeaders = document.getElementById('track-headers');
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'track-header';
+    headerDiv.id = `audio-header-${trackNum}`;
+    headerDiv.innerHTML = `
+        <div class="track-title" style="background:#1B542D;"><span id="title-audio-${trackNum}">${trackNum + 1}. Audio Track ${trackNum}</span></div>
+        <div class="track-btn-group">
+            <button class="btn-fx" onclick="openAudioFXModal(${trackNum})">FX Audio...</button>
+            <button class="btn-retro btn-mute" id="mute-a${trackNum}" onclick="toggleMute(${trackNum})">M</button>
+            <button class="btn-retro btn-solo">S</button>
+        </div>
+        <div style="font-size:9px;">Volumen:</div>
+        <input type="range" min="0" max="100" value="80" style="width:100%; height:10px;" oninput="updateTrackVolume(${trackNum}, this.value)">
+    `;
+    trackHeaders.appendChild(headerDiv);
+
+    const timeline = document.getElementById('timeline');
+    const laneDiv = document.createElement('div');
+    laneDiv.className = 'track-lane';
+    laneDiv.id = `lane-audio-${trackNum}`;
+    timeline.appendChild(laneDiv);
+
+    return laneDiv;
+}
+
+function updateTrackVolume(trackNum, val) {
+    if (trackEffects[trackNum]) {
+        trackEffects[trackNum].volume = val / 100;
+        if (isPlaying) playIndependentAudioTracks();
+    }
+}
+
+function toggleMute(trackNum) {
+    if (trackEffects[trackNum]) {
+        trackEffects[trackNum].muted = !trackEffects[trackNum].muted;
+        const btn = document.getElementById(`mute-a${trackNum}`);
+        if (btn) btn.classList.toggle('active', trackEffects[trackNum].muted);
+        if (isPlaying) playIndependentAudioTracks();
+    }
+}
+
+function duplicateSelectedAudio() {
+    const selectedClip = audioClips.find(c => c.selected);
+    if (!selectedClip) {
+        alert("Selecciona primero un clip de audio en la línea de tiempo.");
+        return;
+    }
+
+    const newTrackNum = activeAudioTrackCount + 1;
+    
+    const originalFx = trackEffects[selectedClip.track] || {};
+    trackEffects[newTrackNum] = { ...originalFx };
+
+    const duplicatedClip = {
+        id: Date.now(),
+        track: newTrackNum,
+        name: `${selectedClip.name} (Copia)`,
+        duration: selectedClip.duration,
+        startPos: selectedClip.startPos,
+        selected: true
+    };
+
+    selectedClip.selected = false;
+    audioClips.push(duplicatedClip);
+    renderAudioClipsUI();
+    statusText.innerText = "Audio Duplicado";
+    statusText.style.color = "#6B1B6B";
+}
+
+document.getElementById('btn-duplicate').addEventListener('click', duplicateSelectedAudio);
+
+window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        duplicateSelectedAudio();
+    }
+});
+
+function play() {
+    initAudioContext();
+    isPlaying = true;
+    playIndependentAudioTracks();
+    videoElem.playbackRate = 1.0;
+    videoElem.play().catch(e => console.log(e));
+    requestAnimationFrame(updateLoop);
+}
+
+function pause() {
+    isPlaying = false;
+    videoElem.pause();
+    stopAllAudioSources();
+    meterL.style.height = '0%';
+    meterR.style.height = '0%';
+}
+
+function stop() {
+    pause();
+    videoElem.currentTime = 0;
+    playheadPos = 0;
+    updatePlayheadUI();
+    renderPreview();
+}
+
+function updateLoop() {
+    if (!isPlaying && !isRendering) return;
+    playheadPos = videoElem.currentTime * pps;
+    updatePlayheadUI();
+    renderPreview();
+    updateMeters();
+
+    if (!videoElem.ended) {
+        requestAnimationFrame(updateLoop);
+    } else {
+        if (isRendering) finishRendering();
+        else pause();
+    }
+}
+
+function updatePlayheadUI() {
+    playhead.style.left = playheadPos + 'px';
+    const curTime = videoElem.currentTime || 0;
+    const mins = Math.floor(curTime / 60);
+    const secs = Math.floor(curTime % 60);
+    const frames = Math.floor((curTime % 1) * 29.97);
+    timecode.innerText = `00:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}:${String(frames).padStart(2,'0')}`;
+}
+
+function renderPreview() {
+    if (!videoElem.videoWidth || videoElem.readyState < 2) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    let filters = [];
+    if (document.getElementById('fx-v-invert').checked) filters.push('invert(100%)');
+    if (document.getElementById('fx-v-gray').checked) filters.push('grayscale(100%)');
+    if (document.getElementById('fx-v-sepia').checked) filters.push('sepia(100%)');
+
+    const blurVal = parseInt(document.getElementById('fx-v-blur').value);
+    if (blurVal > 0) filters.push(`blur(${blurVal}px)`);
+
+    const hueVal = parseInt(document.getElementById('fx-v-hue').value);
+    if (hueVal > 0) filters.push(`hue-rotate(${hueVal}deg)`);
+
+    const brightVal = parseInt(document.getElementById('fx-v-brightness').value);
+    if (brightVal !== 100) filters.push(`brightness(${brightVal}%)`);
+
+    offCtx.save();
+    offCtx.clearRect(0, 0, w, h);
+
+    const flipMode = document.getElementById('fx-v-flip').value;
+    if (flipMode !== 'none') {
+        offCtx.translate(w / 2, h / 2);
+        let scaleX = (flipMode === 'horizontal' || flipMode === 'both') ? -1 : 1;
+        let scaleY = (flipMode === 'vertical' || flipMode === 'both') ? -1 : 1;
+        offCtx.scale(scaleX, scaleY);
+        offCtx.translate(-w / 2, -h / 2);
+    }
+
+    if (document.getElementById('fx-v-rotate').checked) {
+        let progress = videoDuration > 0 ? (videoElem.currentTime / videoDuration) : 0;
+        progress = Math.min(Math.max(progress, 0), 1);
+        const currentAngleDeg = progress * 180; 
+        const angleRad = (currentAngleDeg * Math.PI) / 180;
+
+        offCtx.translate(w / 2, h / 2);
+        offCtx.rotate(angleRad);
+        offCtx.translate(-w / 2, -h / 2);
+    }
+
+    offCtx.filter = filters.length > 0 ? filters.join(' ') : 'none';
+
+    const pixelSize = parseInt(document.getElementById('fx-v-pixelate').value);
+    if (pixelSize > 1) {
+        const sw = Math.max(1, Math.floor(w / pixelSize));
+        const sh = Math.max(1, Math.floor(h / pixelSize));
+        offCtx.imageSmoothingEnabled = false;
+        offCtx.drawImage(videoElem, 0, 0, sw, sh);
+        offCtx.drawImage(offCanvas, 0, 0, sw, sh, 0, 0, w, h);
+    } else {
+        offCtx.drawImage(videoElem, 0, 0, w, h);
+    }
+    offCtx.restore();
+
+    if (document.getElementById('fx-v-magma-check').checked) applyMagmaEffect(w, h);
+    if (document.getElementById('fx-v-scartoon-check').checked) applySCartoonEffect(w, h);
+    if (document.getElementById('fx-v-chanblend-check').checked) applyChannelBlendEffect(w, h);
+
+    const rgbShiftVal = parseInt(document.getElementById('fx-v-rgbshift').value);
+    if (rgbShiftVal > 0) applyRGBShiftEffect(w, h, rgbShiftVal);
+
+    if (document.getElementById('fx-v-edgedetect').checked) applyEdgeDetectEffect(w, h);
+
+    const twirlVal = parseInt(document.getElementById('fx-v-twirl').value);
+    if (twirlVal !== 0) applyTwirlEffect(w, h, twirlVal);
+
+    const swirlVal = parseInt(document.getElementById('fx-v-swirl').value);
+    if (swirlVal !== 0) applySwirlEffect(w, h, swirlVal);
+
+    const spherizeAmount = parseInt(document.getElementById('fx-v-spherize').value);
+    if (spherizeAmount > 0) {
+        try { applySpherizeEffect(w, h, spherizeAmount / 50.0); } catch(e) {}
+    }
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+
+    const waveAmp = parseInt(document.getElementById('fx-v-wave-amp').value);
+    const waveFreq = parseInt(document.getElementById('fx-v-wave-freq').value) * 0.05;
+    const waveSpeed = parseInt(document.getElementById('fx-v-wave-speed').value) * 0.05;
+    const waveDir = document.getElementById('fx-v-wave-dir').value;
+
+    wavePhase += waveSpeed;
+
+    if (waveAmp > 0) {
+        if (waveDir === 'ripple') {
+            applyRippleEffect(w, h, waveAmp, waveFreq, wavePhase);
+        } else if (waveDir === 'horizontal') {
+            for (let y = 0; y < h; y++) {
+                const shiftX = Math.sin(y * waveFreq + wavePhase) * waveAmp;
+                ctx.drawImage(offCanvas, 0, y, w, 1, shiftX, y, w, 1);
+            }
+        } else if (waveDir === 'vertical') {
+            for (let x = 0; x < w; x++) {
+                const shiftY = Math.sin(x * waveFreq + wavePhase) * waveAmp;
+                ctx.drawImage(offCanvas, x, 0, 1, h, x, shiftY, 1, h);
+            }
+        } else if (waveDir === 'both') {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = w; tempCanvas.height = h;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            for (let y = 0; y < h; y++) {
+                const shiftX = Math.sin(y * waveFreq + wavePhase) * waveAmp;
+                tempCtx.drawImage(offCanvas, 0, y, w, 1, shiftX, y, w, 1);
+            }
+            for (let x = 0; x < w; x++) {
+                const shiftY = Math.sin(x * waveFreq + wavePhase) * waveAmp;
+                ctx.drawImage(tempCanvas, x, 0, 1, h, x, shiftY, 1, h);
+            }
+        }
+    } else {
+        const mirrorMode = document.getElementById('fx-v-mirror-mode').value;
+
+        if (mirrorMode === 'left-to-right') {
+            ctx.drawImage(offCanvas, 0, 0, w / 2, h, 0, 0, w / 2, h);
+            ctx.save(); ctx.translate(w, 0); ctx.scale(-1, 1);
+            ctx.drawImage(offCanvas, 0, 0, w / 2, h, 0, 0, w / 2, h); ctx.restore();
+        } else if (mirrorMode === 'right-to-left') {
+            ctx.drawImage(offCanvas, w / 2, 0, w / 2, h, w / 2, 0, w / 2, h);
+            ctx.save(); ctx.translate(w, 0); ctx.scale(-1, 1);
+            ctx.drawImage(offCanvas, w / 2, 0, w / 2, h, w / 2, 0, w / 2, h); ctx.restore();
+        } else if (mirrorMode === 'top-to-bottom') {
+            ctx.drawImage(offCanvas, 0, 0, w, h / 2, 0, 0, w, h / 2);
+            ctx.save(); ctx.translate(0, h); ctx.scale(1, -1);
+            ctx.drawImage(offCanvas, 0, 0, w, h / 2, 0, 0, w, h / 2); ctx.restore();
+        } else if (mirrorMode === 'bottom-to-top') {
+            ctx.drawImage(offCanvas, 0, h / 2, w, h / 2, 0, h / 2, w, h / 2);
+            ctx.save(); ctx.translate(0, h); ctx.scale(1, -1);
+            ctx.drawImage(offCanvas, 0, h / 2, w, h / 2, 0, h / 2, w, h / 2); ctx.restore();
+        } else {
+            ctx.drawImage(offCanvas, 0, 0, w, h);
+        }
+    }
+
+    ctx.restore();
+
+    if (document.getElementById('fx-v-gradmap-check').checked) {
+        applyGradientMapEffect(w, h, document.getElementById('fx-v-gradmap-preset').value);
+    }
+
+    // APLICAR SONY GLOW
+    const glowVal = parseInt(document.getElementById('fx-v-glow').value);
+    if (glowVal > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.filter = `blur(${glowVal}px) brightness(130%)`;
+        ctx.drawImage(canvas, 0, 0);
+        ctx.restore();
+    }
+
+    if (document.getElementById('fx-v-threshold').checked) applyThresholdEffect(w, h);
+    if (document.getElementById('fx-v-tvsim').checked) applyTVSimulator(w, h);
+}
+
+function applyMagmaEffect(w, h) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    const intensity = parseInt(document.getElementById('fx-v-magma-intensity').value) / 50;
+    const speed = parseInt(document.getElementById('fx-v-magma-speed').value) * 0.05;
+    const mode = document.getElementById('fx-v-magma-mode').value;
+
+    const time = Date.now() * 0.002 * speed;
+
+    for (let i = 0; i < d.length; i += 4) {
+        let x = (i / 4) % w;
+        let y = Math.floor((i / 4) / w);
+
+        let heat = Math.sin(x * 0.05 + time) * Math.cos(y * 0.05 + time) * intensity;
+        
+        if (mode === 'lava') {
+            d[i] = Math.min(255, d[i] + heat * 120);     
+            d[i + 1] = Math.min(255, d[i + 1] + heat * 40); 
+        } else if (mode === 'plasma') {
+            d[i + 2] = Math.min(255, d[i + 2] + heat * 140); 
+            d[i + 1] = Math.min(255, d[i + 1] + heat * 60);  
+        } else if (mode === 'solar') {
+            d[i] = Math.min(255, d[i] + heat * 150);     
+            d[i + 1] = Math.min(255, d[i + 1] + heat * 100); 
+        }
+    }
+    offCtx.putImageData(imgData, 0, 0);
+}
+
+function applySCartoonEffect(w, h) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const src = imgData.data;
+    const copyData = offCtx.createImageData(w, h);
+    const dst = copyData.data;
+
+    const mode = document.getElementById('fx-v-scartoon-mode').value;
+    const threshold = parseInt(document.getElementById('fx-v-scartoon-thresh').value);
+    const edgeWidth = parseInt(document.getElementById('fx-v-scartoon-width').value);
+    const levels = parseInt(document.getElementById('fx-v-scartoon-levels').value);
+    const satScale = parseInt(document.getElementById('fx-v-scartoon-sat').value) / 100;
+
+    const step = 255 / (levels - 1);
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            let idx = (y * w + x) * 4;
+
+            let r = src[idx];
+            let g = src[idx + 1];
+            let b = src[idx + 2];
+
+            if (satScale !== 1.0) {
+                let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                r = Math.min(255, Math.max(0, gray + (r - gray) * satScale));
+                g = Math.min(255, Math.max(0, gray + (g - gray) * satScale));
+                b = Math.min(255, Math.max(0, gray + (b - gray) * satScale));
+            }
+
+            r = Math.round(r / step) * step;
+            g = Math.round(g / step) * step;
+            b = Math.round(b / step) * step;
+
+            let nextX = Math.min(w - 1, x + edgeWidth);
+            let nextY = Math.min(h - 1, y + edgeWidth);
+            let rxIdx = (y * w + nextX) * 4;
+            let dyIdx = (nextY * w + x) * 4;
+
+            let gx = Math.abs(src[idx] - src[rxIdx]) + Math.abs(src[idx + 1] - src[rxIdx + 1]) + Math.abs(src[idx + 2] - src[rxIdx + 2]);
+            let gy = Math.abs(src[idx] - src[dyIdx]) + Math.abs(src[idx + 1] - src[dyIdx + 1]) + Math.abs(src[idx + 2] - src[dyIdx + 2]);
+            let edgeMag = (gx + gy) / 3;
+
+            let isEdge = edgeMag > threshold;
+
+            if (mode === 'edges-only') {
+                let edgeVal = isEdge ? 0 : 255;
+                dst[idx] = edgeVal; dst[idx + 1] = edgeVal; dst[idx + 2] = edgeVal;
+            } else {
+                if (isEdge) {
+                    dst[idx] = 0; dst[idx + 1] = 0; dst[idx + 2] = 0;
+                } else {
+                    dst[idx] = r; dst[idx + 1] = g; dst[idx + 2] = b;
+                }
+            }
+            dst[idx + 3] = 255;
+        }
+    }
+    offCtx.putImageData(copyData, 0, 0);
+}
+
+function applyChannelBlendEffect(w, h) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    const rr = parseInt(document.getElementById('fx-v-cb-rr').value) / 100;
+    const rg = parseInt(document.getElementById('fx-v-cb-rg').value) / 100;
+    const rb = parseInt(document.getElementById('fx-v-cb-rb').value) / 100;
+
+    const gr = parseInt(document.getElementById('fx-v-cb-gr').value) / 100;
+    const gg = parseInt(document.getElementById('fx-v-cb-gg').value) / 100;
+    const gb = parseInt(document.getElementById('fx-v-cb-gb').value) / 100;
+
+    const br = parseInt(document.getElementById('fx-v-cb-br').value) / 100;
+    const bg = parseInt(document.getElementById('fx-v-cb-bg').value) / 100;
+    const bb = parseInt(document.getElementById('fx-v-cb-bb').value) / 100;
+
+    for (let i = 0; i < d.length; i += 4) {
+        let r = d[i], g = d[i + 1], b = d[i + 2];
+        d[i]     = Math.min(255, Math.max(0, r * rr + g * rg + b * rb));
+        d[i + 1] = Math.min(255, Math.max(0, r * gr + g * gg + b * gb));
+        d[i + 2] = Math.min(255, Math.max(0, r * br + g * bg + b * bb));
+    }
+    offCtx.putImageData(imgData, 0, 0);
+}
+
+function applyGradientMapEffect(w, h, preset) {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    const lutCanvas = document.createElement('canvas');
+    lutCanvas.width = 256; lutCanvas.height = 1;
+    const lutCtx = lutCanvas.getContext('2d');
+    const grad = lutCtx.createLinearGradient(0, 0, 256, 0);
+
+    if (preset === 'blue-yellow') {
+        grad.addColorStop(0, 'rgb(0, 20, 80)');
+        grad.addColorStop(1, 'rgb(255, 230, 0)');
+    } else if (preset === 'black-white') {
+        grad.addColorStop(0, 'rgb(0, 0, 0)');
+        grad.addColorStop(1, 'rgb(255, 255, 255)');
+    } else if (preset === 'cyberpunk') {
+        grad.addColorStop(0, 'rgb(40, 0, 80)');
+        grad.addColorStop(0.5, 'rgb(255, 0, 128)');
+        grad.addColorStop(1, 'rgb(0, 255, 240)');
+    } else if (preset === 'heat') {
+        grad.addColorStop(0, 'rgb(0, 0, 0)');
+        grad.addColorStop(0.33, 'rgb(0, 0, 255)');
+        grad.addColorStop(0.66, 'rgb(255, 0, 0)');
+        grad.addColorStop(1, 'rgb(255, 255, 0)');
+    } else if (preset === 'duotone-red') {
+        grad.addColorStop(0, 'rgb(10, 0, 20)');
+        grad.addColorStop(1, 'rgb(255, 30, 30)');
+    } else if (preset === 'rainbow') {
+        grad.addColorStop(0, 'rgb(255, 0, 0)');
+        grad.addColorStop(0.2, 'rgb(255, 165, 0)');
+        grad.addColorStop(0.4, 'rgb(255, 255, 0)');
+        grad.addColorStop(0.6, 'rgb(0, 255, 0)');
+        grad.addColorStop(0.8, 'rgb(0, 0, 255)');
+        grad.addColorStop(1, 'rgb(238, 130, 238)');
+    }
+
+    lutCtx.fillStyle = grad;
+    lutCtx.fillRect(0, 0, 256, 1);
+    const lutData = lutCtx.getImageData(0, 0, 256, 1).data;
+
+    for (let i = 0; i < d.length; i += 4) {
+        let gray = Math.round(d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
+        let lutIdx = gray * 4;
+        d[i]     = lutData[lutIdx];     
+        d[i + 1] = lutData[lutIdx + 1]; 
+        d[i + 2] = lutData[lutIdx + 2]; 
+    }
+    ctx.putImageData(imgData, 0, 0);
+}
+
+function applyRGBShiftEffect(w, h, shift) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const copyData = offCtx.createImageData(w, h);
+    copyData.data.set(imgData.data);
+
+    const src = copyData.data;
+    const dst = imgData.data;
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            let idx = (y * w + x) * 4;
+            let rIdx = (y * w + Math.min(w - 1, x + shift)) * 4;
+            let bIdx = (y * w + Math.max(0, x - shift)) * 4;
+
+            dst[idx] = src[rIdx];         
+            dst[idx + 1] = src[idx + 1];  
+            dst[idx + 2] = src[bIdx + 2]; 
+        }
+    }
+    offCtx.putImageData(imgData, 0, 0);
+}
+
+function applyEdgeDetectEffect(w, h) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const src = imgData.data;
+    const copyData = offCtx.createImageData(w, h);
+    const dst = copyData.data;
+
+    for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+            let idx = (y * w + x) * 4;
+            let rightIdx = (y * w + (x + 1)) * 4;
+            let bottomIdx = ((y + 1) * w + x) * 4;
+
+            let gx = Math.abs(src[idx] - src[rightIdx]);
+            let gy = Math.abs(src[idx] - src[bottomIdx]);
+            let edge = Math.min(255, (gx + gy) * 2);
+
+            dst[idx] = edge; dst[idx + 1] = edge; dst[idx + 2] = edge; dst[idx + 3] = 255;
+        }
+    }
+    offCtx.putImageData(copyData, 0, 0);
+}
+
+function applyRippleEffect(w, h, amp, freq, phase) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const dstData = ctx.createImageData(w, h);
+
+    const src = imgData.data;
+    const dst = dstData.data;
+    const cx = w / 2;
+    const cy = h / 2;
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+
+            let offset = Math.sin(dist * freq - phase) * amp;
+            let angle = Math.atan2(dy, dx);
+
+            let nx = Math.floor(x + Math.cos(angle) * offset);
+            let ny = Math.floor(y + Math.sin(angle) * offset);
+
+            if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                let srcIdx = (ny * w + nx) * 4;
+                let dstIdx = (y * w + x) * 4;
+                dst[dstIdx] = src[srcIdx];
+                dst[dstIdx + 1] = src[srcIdx + 1];
+                dst[dstIdx + 2] = src[srcIdx + 2];
+                dst[dstIdx + 3] = src[srcIdx + 3];
+            }
+        }
+    }
+    ctx.putImageData(dstData, 0, 0);
+}
+
+function applyTwirlEffect(w, h, angleDegrees) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const copyData = offCtx.createImageData(w, h);
+    copyData.data.set(imgData.data);
+
+    const src = copyData.data;
+    const dst = imgData.data;
+    const cx = w / 2;
+    const cy = h / 2;
+    const radius = Math.min(w, h) / 2;
+    const maxAngleRad = (angleDegrees * Math.PI) / 180;
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < radius) {
+                let angle = Math.atan2(dy, dx);
+                let factor = (radius - dist) / radius;
+                let newAngle = angle + maxAngleRad * factor;
+
+                let nx = Math.floor(cx + dist * Math.cos(newAngle));
+                let ny = Math.floor(cy + dist * Math.sin(newAngle));
+
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    let srcIdx = (ny * w + nx) * 4;
+                    let dstIdx = (y * w + x) * 4;
+                    dst[dstIdx] = src[srcIdx];
+                    dst[dstIdx + 1] = src[srcIdx + 1];
+                    dst[dstIdx + 2] = src[srcIdx + 2];
+                    dst[dstIdx + 3] = src[srcIdx + 3];
+                }
+            }
+        }
+    }
+    offCtx.putImageData(imgData, 0, 0);
+}
+
+function applySwirlEffect(w, h, maxAngleDeg) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const copyData = offCtx.createImageData(w, h);
+    copyData.data.set(imgData.data);
+
+    const src = copyData.data;
+    const dst = imgData.data;
+    const cx = w / 2;
+    const cy = h / 2;
+    const radius = Math.sqrt(cx * cx + cy * cy);
+    const maxAngleRad = (maxAngleDeg * Math.PI) / 180;
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < radius) {
+                let angle = Math.atan2(dy, dx);
+                let factor = Math.pow((radius - dist) / radius, 2);
+                let newAngle = angle + maxAngleRad * factor;
+
+                let nx = Math.floor(cx + dist * Math.cos(newAngle));
+                let ny = Math.floor(cy + dist * Math.sin(newAngle));
+
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    let srcIdx = (ny * w + nx) * 4;
+                    let dstIdx = (y * w + x) * 4;
+                    dst[dstIdx] = src[srcIdx];
+                    dst[dstIdx + 1] = src[srcIdx + 1];
+                    dst[dstIdx + 2] = src[srcIdx + 2];
+                    dst[dstIdx + 3] = src[srcIdx + 3];
+                }
+            }
+        }
+    }
+    offCtx.putImageData(imgData, 0, 0);
+}
+
+function applySpherizeEffect(w, h, strength) {
+    const imgData = offCtx.getImageData(0, 0, w, h);
+    const copyData = offCtx.createImageData(w, h);
+    copyData.data.set(imgData.data);
+
+    const src = copyData.data;
+    const dst = imgData.data;
+    const cx = w / 2;
+    const cy = h / 2;
+    const radius = Math.min(w, h) / 2;
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < radius) {
+                let r = dist / radius;
+                let nr = Math.pow(r, strength) * radius;
+                let theta = Math.atan2(dy, dx);
+                let nx = Math.floor(cx + nr * Math.cos(theta));
+                let ny = Math.floor(cy + nr * Math.sin(theta));
+
+                if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    let srcIdx = (ny * w + nx) * 4;
+                    let dstIdx = (y * w + x) * 4;
+                    dst[dstIdx] = src[srcIdx];
+                    dst[dstIdx + 1] = src[srcIdx + 1];
+                    dst[dstIdx + 2] = src[srcIdx + 2];
+                    dst[dstIdx + 3] = src[srcIdx + 3];
+                }
+            }
+        }
+    }
+    offCtx.putImageData(imgData, 0, 0);
+}
+
+function applyThresholdEffect(w, h) {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+        let avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        let val = avg > 128 ? 255 : 0;
+        d[i] = val; d[i + 1] = val; d[i + 2] = val;
+    }
+    ctx.putImageData(imgData, 0, 0);
+}
+
+function applyTVSimulator(w, h) {
+    const detailZoom = parseFloat(document.getElementById('fx-tv-detailzoom').value);
+    const apertureGrill = parseFloat(document.getElementById('fx-tv-aperture').value);
+    const interlacing = parseFloat(document.getElementById('fx-tv-interlacing').value);
+    const lineSync = parseFloat(document.getElementById('fx-tv-linesync').value);
+    const vertSync = parseFloat(document.getElementById('fx-tv-vertsync').value);
+    const scanPhasing = parseFloat(document.getElementById('fx-tv-scanphasing').value);
+    const phosphorescence = parseFloat(document.getElementById('fx-tv-phosphorescence').value);
+    const staticNoise = parseFloat(document.getElementById('fx-tv-static').value);
+
+    if (detailZoom > 1.0) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = w; tempCanvas.height = h;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(canvas, 0, 0);
+
+        const cropW = w / detailZoom;
+        const cropH = h / detailZoom;
+        const cropX = (w - cropW) / 2;
+        const cropY = (h - cropH) / 2;
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(tempCanvas, cropX, cropY, cropW, cropH, 0, 0, w, h);
+    }
+
+    if (vertSync > 0) {
+        const shiftY = Math.floor((Math.sin(Date.now() * 0.005) * vertSync * h * 0.5));
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = w; tempCanvas.height = h;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(canvas, 0, 0);
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(tempCanvas, 0, shiftY);
+        ctx.drawImage(tempCanvas, 0, shiftY > 0 ? shiftY - h : shiftY + h);
+    }
+
+    if (lineSync > 0) {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = w; tempCanvas.height = h;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(canvas, 0, 0);
+
+        for (let y = 0; y < h; y += 2) {
+            const shiftX = (Math.random() - 0.5) * lineSync * 30;
+            ctx.drawImage(tempCanvas, 0, y, w, 2, shiftX, y, w, 2);
+        }
+    }
+
+    const scanlineAlpha = 0.15 + (interlacing * 0.45);
+    ctx.fillStyle = `rgba(0, 0, 0, ${scanlineAlpha})`;
+    const phaseOffset = Math.floor((Date.now() * 0.01 * (1 + scanPhasing * 5)) % 2);
+    for (let y = phaseOffset; y < h; y += 2) {
+        ctx.fillRect(0, y, w, 1);
+    }
+
+    if (apertureGrill > 0) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${apertureGrill * 0.35})`;
+        for (let x = 0; x < w; x += 3) ctx.fillRect(x, 0, 1, h);
+    }
+
+    if (phosphorescence > 0) {
+        ctx.fillStyle = `rgba(50, 255, 100, ${phosphorescence * 0.12})`;
+        ctx.fillRect(0, 0, w, h);
+    }
+
+    if (staticNoise > 0) {
+        const count = Math.floor(staticNoise * 1500);
+        ctx.fillStyle = `rgba(255, 255, 255, ${staticNoise * 0.35})`;
+        for (let i = 0; i < count; i++) {
+            let rx = Math.random() * w;
+            let ry = Math.random() * h;
+            ctx.fillRect(rx, ry, 1.5, 1.5);
+        }
+    }
+}
+
+const tvPresets = {
+    'reset': { detailzoom: 1.0, aperture: 0.0, interlacing: 0.0, linesync: 0.0, vertsync: 0.0, scanphasing: 0.0, phosphorescence: 0.0, static: 0.0 },
+    '50hz': { detailzoom: 1.0, aperture: 0.3, interlacing: 0.8, linesync: 0.0, vertsync: 0.0, scanphasing: 0.6, phosphorescence: 0.2, static: 0.05 },
+    'black-and-white': { detailzoom: 1.0, aperture: 0.4, interlacing: 0.5, linesync: 0.02, vertsync: 0.0, scanphasing: 0.2, phosphorescence: 0.1, static: 0.1 },
+    'border Sync': { detailzoom: 1.1, aperture: 0.2, interlacing: 0.4, linesync: 0.15, vertsync: 0.3, scanphasing: 0.5, phosphorescence: 0.0, static: 0.1 },
+    'cheap-tv': { detailzoom: 1.05, aperture: 0.5, interlacing: 0.6, linesync: 0.1, vertsync: 0.05, scanphasing: 0.4, phosphorescence: 0.3, static: 0.25 },
+    'line-sync-loss': { detailzoom: 1.0, aperture: 0.2, interlacing: 0.3, linesync: 0.7, vertsync: 0.0, scanphasing: 0.1, phosphorescence: 0.0, static: 0.15 },
+    'old-tv': { detailzoom: 1.15, aperture: 0.6, interlacing: 0.7, linesync: 0.05, vertsync: 0.1, scanphasing: 0.5, phosphorescence: 0.5, static: 0.2 },
+    'static-only': { detailzoom: 1.0, aperture: 0.0, interlacing: 0.1, linesync: 0.0, vertsync: 0.0, scanphasing: 0.0, phosphorescence: 0.0, static: 0.85 },
+    'vertical-sync-loss': { detailzoom: 1.0, aperture: 0.3, interlacing: 0.4, linesync: 0.0, vertsync: 0.85, scanphasing: 0.3, phosphorescence: 0.1, static: 0.1 }
+};
+
+document.getElementById('fx-tv-preset').addEventListener('change', function(e) {
+    const val = e.target.value;
+    if (val === 'custom' || !tvPresets[val]) return;
+
+    const p = tvPresets[val];
+    document.getElementById('fx-tv-detailzoom').value = p.detailzoom;
+    document.getElementById('fx-tv-aperture').value = p.aperture;
+    document.getElementById('fx-tv-interlacing').value = p.interlacing;
+    document.getElementById('fx-tv-linesync').value = p.linesync;
+    document.getElementById('fx-tv-vertsync').value = p.vertsync;
+    document.getElementById('fx-tv-scanphasing').value = p.scanphasing;
+    document.getElementById('fx-tv-phosphorescence').value = p.phosphorescence;
+    document.getElementById('fx-tv-static').value = p.static;
+
+    document.getElementById('fx-v-tvsim').checked = true;
+    renderPreview();
+});
+
+document.querySelectorAll('#modal-vfx input[id^="fx-tv-"]').forEach(el => {
+    el.addEventListener('input', () => {
+        document.getElementById('fx-tv-preset').value = 'custom';
+    });
+});
+
+function updateMeters() {
+    if (!isPlaying && !isRendering) return;
+    const activeCount = Object.values(trackEffects).filter(fx => !fx.muted).length;
+    const multiplier = Math.min(2.0, 1 + (activeCount - 1) * 0.3);
+    meterL.style.height = Math.min(100, (Math.random() * 40 + 40) * multiplier) + '%';
+    meterR.style.height = Math.min(100, (Math.random() * 40 + 40) * multiplier) + '%';
+}
+
+document.getElementById('btn-render').addEventListener('click', startRendering);
+
+async function startRendering() {
+    if (videoDuration === 0) {
+        alert("Primero importa un archivo multimedia.");
+        return;
+    }
+
+    stop();
+    initAudioContext();
+
+    if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+
+    isRendering = true;
+    statusText.innerText = "Renderizando...";
+    statusText.style.color = "red";
+
+    const canvasStream = canvas.captureStream(30);
+    const outputStream = new MediaStream();
+    canvasStream.getVideoTracks().forEach(track => outputStream.addTrack(track));
+
+    if (audioDestinationNode) {
+        const audioTrack = audioDestinationNode.stream.getAudioTracks()[0];
+        if (audioTrack) outputStream.addTrack(audioTrack);
+    }
+
+    recordedChunks = [];
+    let options = { mimeType: 'video/webm;codecs=vp8,opus' };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) options = { mimeType: 'video/webm' };
+
+    mediaRecorder = new MediaRecorder(outputStream, options);
+
+    mediaRecorder.ondataavailable = function(e) {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = function() {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.URL ? URL.createObjectURL(blob) : webkitURL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'VegasPro8_Render.webm';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }, 100);
+
+        statusText.innerText = "Listo";
+        statusText.style.color = "green";
+        isRendering = false;
+    };
+
+    mediaRecorder.start();
+    play();
+}
+
+function finishRendering() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    pause();
+}
+
+function openVideoFXModal() { document.getElementById('modal-vfx').style.display = 'flex'; }
+
+function openAudioFXModal(trackNum) {
+    activeEditingTrackId = trackNum;
+    document.getElementById('audio-modal-title').innerText = `Audio Track FX - Track ${trackNum}`;
+    
+    const fx = trackEffects[trackNum] || {
+        pitch: 0, formulator: false, formulatorBands: 12, formulatorRes: 8,
+        vocoder: false, vocoderFreq: 150, vocoderWave: 'sawtooth',
+        bitcrush: false, bitcrushBits: 8, bitcrushNormFreq: 1.0,
+        am: false, chorus: false, delay: false, dist: false, stutter: false,
+        eq: 'none', reverse: false
+    };
+
+    document.getElementById('fx-a-pitch-val').value = fx.pitch;
+    document.getElementById('pitch-disp').innerText = `${fx.pitch > 0 ? '+' : ''}${fx.pitch} st`;
+    
+    document.getElementById('fx-a-formulator-check').checked = fx.formulator;
+    document.getElementById('fx-a-formulator-bands').value = fx.formulatorBands;
+    document.getElementById('formulator-bands-disp').innerText = fx.formulatorBands;
+    document.getElementById('fx-a-formulator-res').value = fx.formulatorRes;
+    document.getElementById('formulator-res-disp').innerText = fx.formulatorRes;
+
+    document.getElementById('fx-a-vocoder-check').checked = fx.vocoder;
+    document.getElementById('fx-a-vocoder-freq').value = fx.vocoderFreq;
+    document.getElementById('vocoder-freq-disp').innerText = `${fx.vocoderFreq} Hz`;
+    document.getElementById('fx-a-vocoder-wave').value = fx.vocoderWave;
+
+    document.getElementById('fx-a-bitcrush-check').checked = fx.bitcrush;
+    document.getElementById('fx-a-bitcrush-bits').value = fx.bitcrushBits;
+    document.getElementById('bitcrush-bits-disp').innerText = `${fx.bitcrushBits} bit`;
+    document.getElementById('fx-a-bitcrush-normfreq').value = fx.bitcrushNormFreq;
+    document.getElementById('bitcrush-freq-disp').innerText = parseFloat(fx.bitcrushNormFreq).toFixed(2);
+
+    document.getElementById('fx-a-am-check').checked = fx.am;
+    document.getElementById('fx-a-chorus-check').checked = fx.chorus;
+    document.getElementById('fx-a-delay-check').checked = fx.delay;
+    document.getElementById('fx-a-dist-check').checked = fx.dist;
+    document.getElementById('fx-a-stutter-check').checked = fx.stutter;
+    document.getElementById('fx-a-eq-mode').value = fx.eq;
+    document.getElementById('fx-a-reverse-check').checked = fx.reverse;
+
+    document.getElementById('modal-afx').style.display = 'flex';
+}
+
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+document.querySelectorAll('#modal-vfx input, #modal-vfx select').forEach(el => {
+    el.addEventListener('change', renderPreview);
+    el.addEventListener('input', renderPreview);
+});
+
+document.querySelectorAll('#modal-afx input, #modal-afx select').forEach(el => {
+    const updateFX = () => {
+        if (!trackEffects[activeEditingTrackId]) return;
+        
+        const pitchVal = parseInt(document.getElementById('fx-a-pitch-val').value);
+        document.getElementById('pitch-disp').innerText = `${pitchVal > 0 ? '+' : ''}${pitchVal} st`;
+
+        const formBandsVal = parseInt(document.getElementById('fx-a-formulator-bands').value);
+        document.getElementById('formulator-bands-disp').innerText = formBandsVal;
+
+        const formResVal = parseInt(document.getElementById('fx-a-formulator-res').value);
+        document.getElementById('formulator-res-disp').innerText = formResVal;
+
+        const vocFreqVal = parseInt(document.getElementById('fx-a-vocoder-freq').value);
+        document.getElementById('vocoder-freq-disp').innerText = `${vocFreqVal} Hz`;
+
+        const bitsVal = parseInt(document.getElementById('fx-a-bitcrush-bits').value);
+        document.getElementById('bitcrush-bits-disp').innerText = `${bitsVal} bit`;
+
+        const normFreqVal = parseFloat(document.getElementById('fx-a-bitcrush-normfreq').value);
+        document.getElementById('bitcrush-freq-disp').innerText = normFreqVal.toFixed(2);
+
+        trackEffects[activeEditingTrackId] = {
+            ...trackEffects[activeEditingTrackId],
+            pitch: pitchVal,
+            formulator: document.getElementById('fx-a-formulator-check').checked,
+            formulatorBands: formBandsVal,
+            formulatorRes: formResVal,
+            vocoder: document.getElementById('fx-a-vocoder-check').checked,
+            vocoderFreq: vocFreqVal,
+            vocoderWave: document.getElementById('fx-a-vocoder-wave').value,
+            bitcrush: document.getElementById('fx-a-bitcrush-check').checked,
+            bitcrushBits: bitsVal,
+            bitcrushNormFreq: normFreqVal,
+            am: document.getElementById('fx-a-am-check').checked,
+            chorus: document.getElementById('fx-a-chorus-check').checked,
+            delay: document.getElementById('fx-a-delay-check').checked,
+            dist: document.getElementById('fx-a-dist-check').checked,
+            stutter: document.getElementById('fx-a-stutter-check').checked,
+            eq: document.getElementById('fx-a-eq-mode').value,
+            reverse: document.getElementById('fx-a-reverse-check').checked
+        };
+
+        if (isPlaying) playIndependentAudioTracks();
+    };
+
+    el.addEventListener('change', updateFX);
+    el.addEventListener('input', updateFX);
+});
+
+document.getElementById('vol-v1').addEventListener('input', (e) => canvas.style.opacity = e.target.value / 100);
+
+document.getElementById('btn-play').addEventListener('click', play);
+document.getElementById('btn-pause').addEventListener('click', pause);
+document.getElementById('btn-stop').addEventListener('click', stop);
+document.getElementById('btn-rewind').addEventListener('click', () => {
+    videoElem.currentTime = 0;
+    playheadPos = 0;
+    updatePlayheadUI();
+    renderPreview();
+});
+
+document.getElementById('ruler').addEventListener('click', (e) => {
+    const rect = e.target.getBoundingClientRect();
+    playheadPos = e.clientX - rect.left;
+    if (videoDuration > 0) videoElem.currentTime = playheadPos / pps;
+    updatePlayheadUI();
+    renderPreview();
+});
+
+const ruler = document.getElementById('ruler');
+for (let x = 0; x < 2000; x += 40) {
+    const mark = document.createElement('div');
+    mark.className = 'ruler-mark';
+    mark.style.left = x + 'px';
+    mark.innerText = `00:00:${String(x / pps).padStart(2, '0')}`;
+    ruler.appendChild(mark);
+}

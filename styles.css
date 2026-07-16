@@ -1,0 +1,431 @@
+* {
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background-color: #C8C8C8;
+    font-family: 'Tahoma', 'Arial', sans-serif;
+    font-size: 11px;
+    color: #000000;
+    overflow: hidden;
+}
+
+/* Vegas Pro 8 Header Styling */
+.title-bar-mock {
+    background: linear-gradient(90deg, #182B48, #5A789A, #90A0B0);
+    color: white;
+    padding: 3px 6px;
+    font-weight: bold;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #101010;
+}
+
+.menu-bar {
+    display: flex;
+    background-color: #D4D0C8;
+    padding: 1px 2px;
+    border-bottom: 1px solid #808080;
+}
+
+.menu-item {
+    padding: 2px 6px;
+    cursor: pointer;
+}
+
+.menu-item:hover {
+    background-color: #182B48;
+    color: #FFFFFF;
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    padding: 3px 4px;
+    gap: 3px;
+    background-color: #C0C0C0;
+    border-bottom: 1px solid #707070;
+}
+
+.btn-retro {
+    background: #D4D0C8;
+    border: 1px solid;
+    border-color: #FFFFFF #404040 #404040 #FFFFFF;
+    padding: 2px 5px;
+    font-size: 10px;
+    cursor: pointer;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+.btn-retro:active, .btn-retro.active {
+    border-color: #404040 #FFFFFF #FFFFFF #404040;
+    background: #A0A0A0;
+}
+
+.btn-render {
+    background: #1B6B1B;
+    color: #FFFFFF;
+    border-color: #60E060 #003000 #003000 #60E060;
+}
+
+.btn-dup {
+    background: #6B1B6B;
+    color: #FFFFFF;
+    border-color: #E060E0 #300030 #300030 #E060E0;
+}
+
+.separator {
+    width: 2px;
+    height: 18px;
+    border-left: 1px solid #808080;
+    border-right: 1px solid #FFFFFF;
+    margin: 0 3px;
+}
+
+#workspace {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 47px);
+}
+
+#top-split {
+    display: flex;
+    flex: 1;
+    background: #404040;
+    overflow: hidden;
+}
+
+#track-headers {
+    width: 240px;
+    background: #B8B8B8;
+    border-right: 2px solid #303030;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.track-header {
+    height: 90px;
+    background: #B0B0B0;
+    border-bottom: 2px solid #707070;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex-shrink: 0;
+}
+
+.track-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #182B48;
+    color: white;
+    padding: 2px 4px;
+    font-weight: bold;
+}
+
+.track-btn-group {
+    display: flex;
+    gap: 3px;
+    margin-top: 2px;
+    align-items: center;
+}
+
+.btn-fx {
+    background: #184A78;
+    color: #FFFFFF;
+    border: 1px solid;
+    border-color: #80A0C0 #001020 #001020 #80A0C0;
+    font-size: 9px;
+    font-weight: bold;
+    padding: 1px 4px;
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+.btn-mute.active { background: #E03030; color: white; }
+.btn-solo.active { background: #E0B000; color: black; }
+
+#timeline {
+    flex: 1;
+    background: #2A2A2A;
+    position: relative;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+#ruler {
+    height: 22px;
+    background: #B0B0B0;
+    border-bottom: 1px solid #303030;
+    position: relative;
+    cursor: pointer;
+    width: 2000px;
+}
+
+.ruler-mark {
+    position: absolute;
+    font-size: 9px;
+    border-left: 1px solid #000;
+    height: 6px;
+    bottom: 0;
+    padding-left: 2px;
+}
+
+.track-lane {
+    height: 90px;
+    border-bottom: 1px solid #404040;
+    position: relative;
+    background: rgba(255,255,255,0.03);
+    width: 2000px;
+}
+
+.media-clip {
+    position: absolute;
+    height: 82px;
+    top: 4px;
+    background: #3B5B72;
+    border: 1px solid #FFFFFF;
+    border-radius: 2px;
+    color: #FFF;
+    padding: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    overflow: hidden;
+    box-shadow: 1px 1px 4px rgba(0,0,0,0.5);
+}
+
+.media-clip.selected {
+    border: 2px solid #FFFF00;
+    background: #23486E;
+}
+
+.audio-clip {
+    background: #3B724B;
+}
+
+.audio-clip.selected {
+    border: 2px solid #FFFF00;
+    background: #1B542D;
+}
+
+#playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: #FF0000;
+    z-index: 100;
+    pointer-events: none;
+    left: 0px;
+}
+
+#playhead-head {
+    position: absolute;
+    top: 0;
+    left: -4px;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid #FF0000;
+}
+
+#bottom-dock {
+    height: 270px;
+    background: #B8B8B8;
+    border-top: 2px solid #FFFFFF;
+    display: flex;
+    flex-direction: column;
+}
+
+.dock-container {
+    display: flex;
+    flex: 1;
+    padding: 2px;
+    gap: 4px;
+    overflow: hidden;
+}
+
+.dock-tab-content {
+    flex: 1;
+    background: #FFF;
+    border: 2px solid;
+    border-color: #707070 #FFF #FFF #707070;
+    padding: 6px;
+    overflow-y: auto;
+}
+
+.master-meter-panel {
+    width: 80px;
+    background: #B0B0B0;
+    border: 2px solid;
+    border-color: #FFF #707070 #707070 #FFF;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2px;
+    font-size: 9px;
+}
+
+.meter-bars {
+    display: flex;
+    gap: 4px;
+    height: 160px;
+    background: #000;
+    padding: 2px;
+    border: 1px solid #707070;
+    margin-top: 4px;
+}
+
+.meter-channel {
+    width: 8px;
+    height: 100%;
+    background: #111;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+}
+
+.meter-fill {
+    width: 100%;
+    height: 0%;
+    background: linear-gradient(to top, #00FF00 70%, #FFFF00 85%, #FF0000 100%);
+}
+
+.preview-panel {
+    width: 360px;
+    background: #B0B0B0;
+    border: 2px solid;
+    border-color: #FFF #707070 #707070 #FFF;
+    display: flex;
+    flex-direction: column;
+}
+
+.preview-screen-container {
+    background: #000;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.preview-screen-container::after {
+    content: "VEGAS PRO 8.0";
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    font-family: 'Tahoma', sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    color: #FFFFFF;
+    opacity: 0.35;
+    pointer-events: none;
+    text-shadow: 1px 1px 2px #000000;
+    z-index: 10;
+}
+
+canvas#preview-canvas {
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    background: #000;
+}
+
+.preview-footer {
+    background: #B0B0B0;
+    font-size: 9px;
+    padding: 2px 4px;
+    border-top: 1px solid #707070;
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.4);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-window {
+    width: 520px;
+    max-height: 85vh;
+    background: #C8C8C8;
+    border: 2px solid;
+    border-color: #FFFFFF #303030 #303030 #FFFFFF;
+    box-shadow: 3px 3px 10px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-title {
+    background: #182B48;
+    color: white;
+    font-weight: bold;
+    padding: 3px 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-body {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+}
+
+.fx-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #DBDBDB;
+    padding: 4px 6px;
+    border: 1px solid #808080;
+    font-size: 10px;
+}
+
+.fx-subgroup {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    background: #CFCFCF;
+    padding: 4px;
+    border: 1px solid #909090;
+    margin-top: 2px;
+}
+
+.fx-subrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 9px;
+}
+
+.modal-footer {
+    padding: 6px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    border-top: 1px solid #808080;
+}
